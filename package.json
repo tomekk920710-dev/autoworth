@@ -1,6 +1,6 @@
 {
-  "name": "autoworth-v12",
-  "version": "1.5.0",
+  "name": "autoworth",
+  "version": "1.5.8",
   "private": true,
   "type": "module",
   "scripts": {

@@ -46,8 +46,14 @@ db.exec(`CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT,e
 CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,title TEXT NOT NULL,workflow TEXT NOT NULL,analysis_json TEXT NOT NULL,economics_json TEXT NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(user_id) REFERENCES users(id));
 CREATE TABLE IF NOT EXISTS stripe_events(id TEXT PRIMARY KEY,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS checkout_sessions(id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,status TEXT NOT NULL DEFAULT "created",created_at TEXT DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(user_id) REFERENCES users(id));`);
+const reportColumns=db.pragma("table_info(reports)");
+if(!reportColumns.some(c=>c.name==="payment_session_id")) db.exec("ALTER TABLE reports ADD COLUMN payment_session_id TEXT");
+db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_payment_session ON reports(user_id,payment_session_id) WHERE payment_session_id IS NOT NULL");
 const q={userByEmail:db.prepare("SELECT * FROM users WHERE email=?"),userById:db.prepare("SELECT id,email FROM users WHERE id=?"),
 insertUser:db.prepare("INSERT INTO users(email,password_hash) VALUES(?,?)"),insertReport:db.prepare("INSERT INTO reports(user_id,title,workflow,analysis_json,economics_json) VALUES(?,?,?,?,?)"),
+insertPaidReport:db.prepare("INSERT INTO reports(user_id,title,workflow,analysis_json,economics_json,payment_session_id) VALUES(?,?,?,?,?,?)"),
+paidCheckout:db.prepare("SELECT id FROM checkout_sessions WHERE id=? AND user_id=? AND status='paid'"),
+reportByPaymentSession:db.prepare("SELECT id FROM reports WHERE user_id=? AND payment_session_id=?"),
 reports:db.prepare("SELECT id,title,created_at FROM reports WHERE user_id=? ORDER BY id DESC LIMIT 50"),report:db.prepare("SELECT * FROM reports WHERE id=? AND user_id=?"),deleteReport:db.prepare("DELETE FROM reports WHERE id=? AND user_id=?"),
 insertCheckout:db.prepare("INSERT OR REPLACE INTO checkout_sessions(id,user_id,status) VALUES(?,?,?)"),
 checkout:db.prepare("SELECT * FROM checkout_sessions WHERE id=?"),
@@ -143,20 +149,38 @@ app.post("/api/analyze",rateLimit({windowMs:600000,max:30,keyPrefix:"analyze"}),
     res.json({source:"openai",analysis:parsed,usage:r.usage||null})}catch(e){console.error(e);res.status(502).json({error:"AI analysis failed. Please try again."})}});
 
 app.post("/api/reports",auth,(req,res)=>{
- const title=String(req.body.title||"Untitled workflow").slice(0,120),workflow=String(req.body.workflow||"").slice(0,12000),analysis=req.body.analysis,economics=req.body.economics;
+ const title=String(req.body.title||"Untitled workflow").slice(0,120),workflow=String(req.body.workflow||"").slice(0,12000),analysis=req.body.analysis,economics=req.body.economics,paymentSessionId=String(req.body.paymentSessionId||"").trim();
  if(!workflow||!analysis)return res.status(400).json({error:"Missing report data"});
- const tx=db.transaction(()=>{
-   const u=db.prepare("SELECT plan,report_credits FROM users WHERE id=?").get(req.user.id);
-   if(!u)throw Object.assign(new Error("USER_NOT_FOUND"),{code:"USER_NOT_FOUND"});
-   if(u.plan!=="pro"){
-     const debit=db.prepare("UPDATE users SET report_credits=report_credits-1 WHERE id=? AND report_credits>0").run(req.user.id);
-     if(debit.changes!==1)throw Object.assign(new Error("PAYWALL"),{code:"PAYWALL"});
+ try{
+   if(paymentSessionId){
+     const paid=q.paidCheckout.get(paymentSessionId,req.user.id);
+     if(!paid)return res.status(403).json({error:"A confirmed payment is required to auto-save this report."});
+     const existing=q.reportByPaymentSession.get(req.user.id,paymentSessionId);
+     if(existing)return res.json({id:existing.id,alreadySaved:true});
+     const saved=q.insertPaidReport.run(req.user.id,title,workflow,JSON.stringify(analysis),JSON.stringify(economics??null),paymentSessionId);
+     return res.json({id:saved.lastInsertRowid,alreadySaved:false});
    }
-   return q.insertReport.run(req.user.id,title,workflow,JSON.stringify(analysis),JSON.stringify(economics??null));
- });
- try{const r=tx();res.json({id:r.lastInsertRowid});}
- catch(e){if(e.code==="PAYWALL")return res.status(402).json({error:"Full Report unlock required.",code:"PAYWALL"});res.status(500).json({error:"Could not save report."})}
+   const tx=db.transaction(()=>{
+     const u=db.prepare("SELECT plan,report_credits FROM users WHERE id=?").get(req.user.id);
+     if(!u)throw Object.assign(new Error("USER_NOT_FOUND"),{code:"USER_NOT_FOUND"});
+     if(u.plan!=="pro"){
+       const debit=db.prepare("UPDATE users SET report_credits=report_credits-1 WHERE id=? AND report_credits>0").run(req.user.id);
+       if(debit.changes!==1)throw Object.assign(new Error("PAYWALL"),{code:"PAYWALL"});
+     }
+     return q.insertReport.run(req.user.id,title,workflow,JSON.stringify(analysis),JSON.stringify(economics??null));
+   });
+   const r=tx();res.json({id:r.lastInsertRowid});
+ }catch(e){
+   if(e.code==="PAYWALL")return res.status(402).json({error:"Full Report unlock required.",code:"PAYWALL"});
+   if(paymentSessionId){
+     const existing=q.reportByPaymentSession.get(req.user.id,paymentSessionId);
+     if(existing)return res.json({id:existing.id,alreadySaved:true});
+   }
+   console.error("Report save error:",e.message);
+   res.status(500).json({error:"Could not save report."});
+ }
 });
+
 app.get("/api/reports",auth,(req,res)=>res.json({reports:q.reports.all(req.user.id)}));
 app.get("/api/reports/:id",auth,(req,res)=>{const r=q.report.get(Number(req.params.id),req.user.id);if(!r)return res.status(404).json({error:"Report not found"});res.json({...r,analysis:JSON.parse(r.analysis_json),economics:JSON.parse(r.economics_json)})});
 
