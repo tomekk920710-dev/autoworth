@@ -9,7 +9,7 @@ function awPurchase(value){if(typeof window.gtag==="function" && window.AW_TRACK
 
 </script>
 </head><body><div class="wrap">
-<div class="top"><div class="ey">AutoWorth · V1.5.7</div><div id="authArea"><button class="alt" onclick="openAuth('login')">Log in</button> <button onclick="openAuth('register')">Create account</button></div></div>
+<div class="top"><div class="ey">AutoWorth · V1.5.9</div><div id="authArea"><button class="alt" onclick="openAuth('login')">Log in</button> <button onclick="openAuth('register')">Create account</button></div></div>
 <section class="hero">
 <div class="ey">AUTOWORTH · AUTOMATION ECONOMICS</div>
 <h1>Find the workflows<br>worth automating.</h1>
@@ -46,9 +46,9 @@ function awPurchase(value){if(typeof window.gtag==="function" && window.AW_TRACK
 
 <div id="modal" class="modal hidden"><div><h2 id="mtitle">Create account</h2><input id="email" placeholder="Email" type="email"><br><br><input id="password" placeholder="Password (8+ chars)" type="password"><div class="actions"><button onclick="submitAuth()">Continue</button><button class="alt" onclick="closeAuth()">Cancel</button></div><p id="merr" style="color:#a62d2d"></p></div></div>
 <script>
-const $=x=>document.getElementById(x),money=n=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(n);let analysis=null,econ=null,authMode='login',user=null,econAvailable=false;
+const $=x=>document.getElementById(x),money=n=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(n);let analysis=null,econ=null,authMode='login',user=null,econAvailable=false,econInputsTouched=false,econTasksTouched=false,econMinsTouched=false;
 const ECON_DEFAULTS={tasks:2400,mins:6,labor:30,ai:0.05,review:3,error:3,setup:500};
-function resetEconomics(){for(const [id,val] of Object.entries(ECON_DEFAULTS)) $(id).value=val;econ=null;econAvailable=false;clearEconomicsDisplay()}
+function resetEconomics(){for(const [id,val] of Object.entries(ECON_DEFAULTS)) $(id).value=val;econ=null;econAvailable=false;econInputsTouched=false;econTasksTouched=false;econMinsTouched=false;clearEconomicsDisplay()}
 function clearEconomicsDisplay(){['cur','aut','save','pay'].forEach(id=>$(id).textContent='—');$('stress').innerHTML=[1,3,5,10].map(e=>`<tr><td>${e}%</td><td>—</td><td>—</td><td>Need workload data</td></tr>`).join('')}
 const demoText="Every morning an employee checks 80 customer emails, copies order details into our CRM, categorizes each request, answers simple questions and creates follow-up tasks. Refund disputes and angry customers are escalated to a manager.";
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -56,14 +56,12 @@ function pill(m){const x=String(m||'').toUpperCase();return `<span class="pill $
 function calcAt(e){const n=id=>Number($(id)?.value);const t=Number.isFinite(n('tasks'))?Math.max(0,n('tasks')):0,m=Number.isFinite(n('mins'))?Math.max(0,n('mins')):0,l=Number.isFinite(n('labor'))?Math.max(0,n('labor')):0,a=Number.isFinite(n('ai'))?Math.max(0,n('ai')):0,r=Number.isFinite(n('review'))?Math.max(0,n('review')):0;let cur=t*m/60*l,auto=t*a+t*e*r/60*l,rework=t*e*l*.1;return{cur,auto,save:Math.max(0,cur-auto-rework)}}
 function isCriticalHumanGate(s){
   const mode=String(s?.recommended_mode||'').toUpperCase();
-  const risk=String(s?.risk||'').toLowerCase();
-  const type=String(s?.type||'').toLowerCase();
   const text=`${s?.name||''} ${s?.description||''} ${s?.rationale||''}`.toLowerCase();
   if(mode!=='KEEP_HUMAN')return false;
-  if(type==='decision'||type==='high_risk'||type==='judgement')return true;
-  const criticalTerms=/\b(underwrite|underwriting|loan|credit(?:\s+decision)?|medical diagnosis|treatment decision|legal advice|legal decision|safety decision|hire|hiring|fire|termination)\b/i;
-  if(risk==='high'&&criticalTerms.test(text))return true;
-  return false;
+  // A generic approval or a model's "decision" label is not enough to
+  // classify the entire workflow as human-only. Require explicit high-stakes context.
+  const criticalTerms=/\b(underwrite|underwriting|loan|credit(?:\s+decision)?|medical diagnosis|clinical diagnosis|treatment decision|prescription|legal advice|legal decision|court ruling|safety decision|hire|hiring|fire|termination|employment decision)\b/i;
+  return criticalTerms.test(text);
 }
 function renderAnalysisView(){
   if(!analysis)return;
@@ -82,7 +80,7 @@ function applyEconomicsSnapshot(q){
     if(Number.isFinite(Number(q[key])) && q[key]!==null && q[key]!=='' ) $(id).value=Number(q[key]);
   }
   if(Number.isFinite(Number(q.errorRate)) && q.errorRate!==null) $('error').value=Number(q.errorRate)*100;
-  econAvailable=Number(q.tasks)>0&&Number(q.mins)>0;
+  econAvailable=Number(q.tasks)>0&&Number(q.mins)>0;econInputsTouched=econAvailable;econTasksTouched=econAvailable;econMinsTouched=econAvailable;
 }
 function calculate(){
   if(!analysis)return;
@@ -112,19 +110,43 @@ function calculate(){
   $('arch').innerHTML=analysis.recommended_architecture.map((x,i)=>`${i?'<span class="arrow">-&gt;</span>':''}<span class="node">${esc(x)}</span>`).join('');
   $('build').innerHTML=analysis.build_plan.map(x=>`<li><b>${esc(x.action)}</b> — ${esc(x.purpose)}<br><span class="muted">Success: ${esc(x.success_metric)}</span></li>`).join('');
 }
-async function run(){let w=$('w').value.trim();const preserveInitialEconomics=!analysis&&econAvailable;if(!preserveInitialEconomics)resetEconomics();
+async function run(){
+  let w=$('w').value.trim();
+  // Keep values the user has entered. Only infer workload values from the
+  // workflow description when the corresponding field has not been edited.
+  const userEditedAnyEconomics=econInputsTouched;
+  const tasksWasEdited=econTasksTouched;
+  const minsWasEdited=econMinsTouched;
+  const hadValidEconomics=econAvailable;
   const num='([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{2,})';
-  const qualifier='(?:about\\s+|approximately\\s+|around\\s+|roughly\\s+|~\\s*)?';
-  const item='(?:(?:customer|emailed|incoming|vendor|supplier)\\s+|customer-?\\s*)*(?:emails?|applications?|requests?|tickets?|orders?|cases?|transactions?|invoices?|leads?)';
-  const monthlyMatch=w.match(new RegExp(qualifier+num+'\\s+'+item+'(?:\\s+(?:per|each)\\s+(?:month|monthly)|\\s+monthly)','i'));
-  const dailyMatch=w.match(new RegExp(qualifier+num+'\\s+'+item+'(?:\\s+(?:per|each)\\s+(?:day|daily)|\\s+daily)?','i'));
-  let dailyVolume=0,parsedTasks=false,parsedMins=false;if(monthlyMatch){const v=Number(monthlyMatch[1].replace(/,/g,''));if(v>0&&v<10000000){$('tasks').value=v;parsedTasks=true;}}else if(dailyMatch){dailyVolume=Number(dailyMatch[1].replace(/,/g,''));if(dailyVolume>0&&dailyVolume<10000000){$('tasks').value=Math.round(dailyVolume*22);parsedTasks=true;}}
+  const qualifier='(?:about\s+|approximately\s+|around\s+|roughly\s+|~\s*)?';
+  const item='(?:(?:customer|emailed|incoming|vendor|supplier)\s+|customer-?\s*)*(?:emails?|applications?|requests?|tickets?|orders?|cases?|transactions?|invoices?|leads?)';
+  const monthlyMatch=w.match(new RegExp(qualifier+num+'\s+'+item+'(?:\s+(?:per|each)\s+(?:month|monthly)|\s+monthly)','i'));
+  const dailyMatch=w.match(new RegExp(qualifier+num+'\s+'+item+'(?:\s+(?:per|each)\s+(?:day|daily)|\s+daily)?','i'));
+  let dailyVolume=0,parsedTasks=false,parsedMins=false;
+  if(!tasksWasEdited){
+    if(monthlyMatch){const v=Number(monthlyMatch[1].replace(/,/g,''));if(v>0&&v<10000000){$('tasks').value=v;parsedTasks=true;}}
+    else if(dailyMatch){dailyVolume=Number(dailyMatch[1].replace(/,/g,''));if(dailyVolume>0&&dailyVolume<10000000){$('tasks').value=Math.round(dailyVolume*22);parsedTasks=true;}}
+  }
   const timeMatch=w.match(/([0-9]+(?:\.[0-9]+)?)\s*(?:minutes?|mins?)\s+(?:per|each)\s+(?:application|request|ticket|email|case|task|invoice)/i);
-  if(timeMatch){$('mins').value=timeMatch[1];parsedMins=true;}
+  if(!minsWasEdited&&timeMatch){$('mins').value=timeMatch[1];parsedMins=true;}
   const dailyHoursMatch=w.match(/(?:about\s+|approximately\s+|around\s+|roughly\s+|~\s*)?([0-9]+(?:\.[0-9]+)?)\s*hours?\s*(?:per\s+day|each\s+day|daily)/i);
-  if(dailyHoursMatch&&dailyVolume>0){$('mins').value=((Number(dailyHoursMatch[1])*60)/dailyVolume).toFixed(2);parsedMins=true;}
-  econAvailable=(parsedTasks&&parsedMins)||preserveInitialEconomics;
-  $('err').textContent='';if(w.length<20){$('err').textContent='Írj le egy valódi folyamatot néhány mondatban.';return}$('status').textContent='AI elemzés…';$('go').disabled=true;try{let r=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({workflow:w})}),d=await r.json();if(!r.ok)throw Error(d.error||'Hiba');analysis=d.analysis;awEvent('workflow_analysis_completed');renderAnalysisView();calculate();$('status').textContent=d.source==='openai'?'Valódi AI elemzés kész.':'Fallback mód.'}catch(e){$('err').textContent=e.message;$('status').textContent=''}finally{$('go').disabled=false}}
+  if(!minsWasEdited&&dailyHoursMatch&&dailyVolume>0){$('mins').value=((Number(dailyHoursMatch[1])*60)/dailyVolume).toFixed(2);parsedMins=true;}
+  // Economics are ready only when both workload dimensions are known:
+  // explicitly supplied by the user, inferred from text, or retained from
+  // a previously valid calculation of this same page session.
+  econAvailable=(tasksWasEdited||parsedTasks)&&(minsWasEdited||parsedMins)||hadValidEconomics;
+  $('err').textContent='';
+  if(w.length<20){$('err').textContent='Írj le egy valódi folyamatot néhány mondatban.';return}
+  $('status').textContent='AI elemzés…';$('go').disabled=true;
+  try{
+    let r=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({workflow:w})}),d=await r.json();
+    if(!r.ok)throw Error(d.error||'Hiba');
+    analysis=d.analysis;awEvent('workflow_analysis_completed');renderAnalysisView();calculate();
+    $('status').textContent=d.source==='openai'?'Valódi AI elemzés kész.':'Fallback mód.';
+  }catch(e){$('err').textContent=e.message;$('status').textContent=''}
+  finally{$('go').disabled=false}
+}
 async function saveReport(){
 if(!user){openAuth('register');$('saveMsg').textContent='Create an account first.';return}
 let st=await fetch('/api/billing/status'); let bs=await st.json();
@@ -219,7 +241,7 @@ async function boot(){
  if(r.ok){let d=await r.json();user=d.user;$('authArea').innerHTML=`<span class="muted">${esc(user.email)}</span> <button class="alt" onclick="logout()">Log out</button>`;loadReports();}
  await handlePaymentReturn();
 }
-['tasks','mins','labor','ai','review','error','setup'].forEach(id=>$(id).addEventListener('input',()=>{econAvailable=true;calculate()}));
-$('go').onclick=run;$('demo').onclick=()=>{$('w').value=demoText;resetEconomics();econAvailable=true;$('tasks').value=2400;$('mins').value=6;$('labor').value=30;$('ai').value=0.05;$('review').value=3;$('error').value=3;$('setup').value=500;run()};boot();
+['tasks','mins','labor','ai','review','error','setup'].forEach(id=>$(id).addEventListener('input',()=>{econInputsTouched=true;if(id==='tasks')econTasksTouched=true;if(id==='mins')econMinsTouched=true;econAvailable=econTasksTouched&&econMinsTouched||econAvailable;calculate()}));
+$('go').onclick=run;$('demo').onclick=()=>{$('w').value=demoText;resetEconomics();econAvailable=true;econInputsTouched=true;econTasksTouched=true;econMinsTouched=true;$('tasks').value=2400;$('mins').value=6;$('labor').value=30;$('ai').value=0.05;$('review').value=3;$('error').value=3;$('setup').value=500;run()};boot();
 </script><section class="card" style="margin-top:28px"><div class="muted">WHAT YOU GET</div><div class="two"><div><h3>Automation Economics</h3><p>Transparent assumptions, risk-adjusted savings, payback and error-rate stress testing.</p></div><div><h3>Implementation Blueprint</h3><p>Workflow architecture, step-level decisions and a practical pilot plan.</p></div></div></section>
 </body></html>
