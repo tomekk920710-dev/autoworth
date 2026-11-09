@@ -1,0 +1,13 @@
+AutoWorth V1.6.0
+
+Economics model correction:
+- Added Human review rate (%) as a separate assumption from AI error rate (%).
+- Human review labor cost = monthly tasks × review rate × review minutes per reviewed task × labor cost/hour ÷ 60.
+- AI error/rework allowance remains separate and is stress-tested at 1%, 3%, 5%, and 10%.
+- Default review rate is 100% to avoid optimistic savings assumptions.
+- Existing saved reports without reviewRate preserve their legacy review-rate assumption when reopened.
+
+Example: 500 tasks/month, 3 review minutes, $30/hour:
+- At 100% review rate: human review labor = $750/month.
+- At 3% review rate: human review labor = $22.50/month.
+This makes the operational assumption explicit instead of deriving it from AI error rate.

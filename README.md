@@ -1,4 +1,4 @@
-# AutoWorth V1.5.9 — GitHub / Render ready
+# AutoWorth V1.6.0 — GitHub / Render ready
 
 AutoWorth is a web-based SaaS that interprets business workflows, quantifies automation economics, and produces a Full Automation Economics Report.
 
@@ -46,3 +46,12 @@ Set the environment variables shown in `env.example` in Render before enabling A
 - Preserves user-edited economics assumptions when Analyze is run; workflow parsing no longer overwrites manually entered task volume or minutes per task.
 - Requires explicit workload values or values parsed from the workflow before showing economics; avoids presenting defaults as verified workload data.
 - Restricts workflow-level KEEP_HUMAN gating to explicitly high-stakes contexts; ordinary invoice manager approval remains a human control step without making the entire workflow human-only.
+
+
+## V1.6.0 economics fix
+- Separates the human review rate from the AI error rate.
+- Adds a dedicated `Human review rate %` input. It controls what share of monthly tasks receive human review.
+- `Human review min / reviewed task` is now explicitly the time spent on each task that is actually reviewed.
+- Defaults the human review rate to 100% as a conservative assumption; users can lower it only when their real process supports a lower review share.
+- The AI error-rate stress test now changes the error/rework allowance independently of the human review rate.
+- Existing saved reports without a review-rate field retain their legacy assumption (review rate equal to their previously stored AI error rate) when opened.
