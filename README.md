@@ -1,57 +1,28 @@
-# AutoWorth V1.6.0 — GitHub / Render ready
+# AutoWorth V2.0.0
 
-AutoWorth is a web-based SaaS that interprets business workflows, quantifies automation economics, and produces a Full Automation Economics Report.
+Premium workflow automation analysis SaaS. The app provides AI workflow interpretation, deterministic economics, risk-aware decisions, saved reports, PDF export and Stripe Full Report checkout.
 
-## V1.5.9 fixes
-- Preserves the original workflow analysis and economics assumptions across Stripe Checkout using a browser session snapshot.
-- After a confirmed Stripe payment, restores the original analysis and automatically saves the Full Report.
-- Makes automatic report saving idempotent per paid Stripe Checkout Session, so repeated return checks do not create duplicate reports.
-- Adds a database migration for the payment-session reference on existing reports.
-- Keeps ordinary invoice-manager approval as a human step without forcing the entire invoice workflow into `KEEP_HUMAN`; high-stakes loan/credit, medical, legal, safety, and employment decisions remain human-gated.
-- Preserves economics assumptions entered before the first analysis instead of clearing them at the start of the analysis.
+## Required environment
+- `NODE_ENV=production`
+- `JWT_SECRET` — long random secret
+- `OPENAI_API_KEY`
+- `OPENAI_MODEL` (default `gpt-5.4`)
+- `PUBLIC_APP_URL`
+- `DB_PATH` — point this to a persistent mounted disk path in production
+- `RESEND_API_KEY` — Resend API key for verification and password reset email
+- `EMAIL_FROM` — sender address on a domain verified in Resend
+- `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` — keep Test/Sandbox values until end-to-end QA is complete
 
-## Included
-- AI workflow interpreter with structured JSON
-- deterministic economics engine
-- account/login flow
-- saved reports
-- Stripe Checkout + signed webhook fulfillment
-- Full Report PDF generation
-- conversion tracking hooks
-- Render deployment configuration
+## Email setup
+Create a Resend account, verify a sending domain, then add `RESEND_API_KEY` and `EMAIL_FROM` in Render. `EMAIL_FROM` should be a verified sender, e.g. `AutoWorth <accounts@your-verified-domain>`.
 
-## Render
-This repository is intended for a Render **Web Service**.
+Registration intentionally does not create an authenticated session until the user verifies their email. Verification links expire after 24 hours. Password reset links expire after one hour and are single-use. The API stores only SHA-256 hashes of the random tokens.
 
-Recommended settings:
-- Language: Node
-- Build Command: `npm install`
-- Start Command: `npm start`
-- Branch: `main`
+## Local development
+```bash
+npm install
+npm run dev
+```
 
-Set the environment variables shown in `env.example` in Render before enabling AI/Stripe payments.
-
-## Important production notes
-- Never commit `.env` or secret keys.
-- Set a long random `JWT_SECRET` in Render.
-- Set `OPENAI_API_KEY` to enable live AI; without it, the app uses the built-in fallback interpreter.
-- Keep Stripe values in Test/Sandbox mode until the complete end-to-end QA passes.
-- `DB_PATH=./autoworth.db` is suitable only for an initial functional test. Configure a persistent disk or managed database before public launch; a normal instance filesystem should not be treated as durable storage.
-- Review `npm audit` findings and update vulnerable dependencies before public launch.
-- Replace legal/contact placeholders on the website before public advertising.
-
-
-## V1.5.9 QA fixes
-
-- Preserves user-edited economics assumptions when Analyze is run; workflow parsing no longer overwrites manually entered task volume or minutes per task.
-- Requires explicit workload values or values parsed from the workflow before showing economics; avoids presenting defaults as verified workload data.
-- Restricts workflow-level KEEP_HUMAN gating to explicitly high-stakes contexts; ordinary invoice manager approval remains a human control step without making the entire workflow human-only.
-
-
-## V1.6.0 economics fix
-- Separates the human review rate from the AI error rate.
-- Adds a dedicated `Human review rate %` input. It controls what share of monthly tasks receive human review.
-- `Human review min / reviewed task` is now explicitly the time spent on each task that is actually reviewed.
-- Defaults the human review rate to 100% as a conservative assumption; users can lower it only when their real process supports a lower review share.
-- The AI error-rate stress test now changes the error/rework allowance independently of the human review rate.
-- Existing saved reports without a review-rate field retain their legacy assumption (review rate equal to their previously stored AI error rate) when opened.
+## Deployment notes
+The included Render blueprint lists the required environment variables but does not provision persistent disk storage on the Free plan. Before accepting real customer accounts/payments, configure durable storage or migrate SQLite to a managed database. Never use Stripe Live keys until checkout, webhook fulfillment, report recovery, and refund/support flows have passed QA.

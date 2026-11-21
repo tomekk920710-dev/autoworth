@@ -1,0 +1,16 @@
+AutoWorth V2.0.0 — Premium UX and account foundation
+
+- Reworked the visual system with a distinctive navy/blue/mint B2B SaaS identity, responsive layout, stronger hierarchy and updated product messaging.
+- Added welcoming registration/login/forgot-password/reset-password UI and browser password-manager autocomplete semantics.
+- Added server-side email verification and password reset flows using short-lived, single-use, hashed tokens.
+- Added Resend email delivery integration. Configure RESEND_API_KEY and EMAIL_FROM before enabling registration in production.
+- Existing accounts are marked verified during migration to avoid locking out existing users.
+- Registration requires email verification before login; duplicate email handling remains explicit.
+- Save Full Report preserves the in-progress analysis through account creation/email verification.
+- Saved Report Open now shows a clear loaded-report banner and scrolls to the actual report view.
+- Version metadata updated to 2.0.0.
+
+Operational requirements before production:
+- Configure RESEND_API_KEY and a verified EMAIL_FROM sender in Render.
+- Configure a persistent database disk/path before relying on durable customer accounts and reports. The current Render Free service does not provide durable local SQLite storage by default.
+- Run end-to-end email verification, password reset, report ownership, Stripe Sandbox and browser/mobile QA before launch.

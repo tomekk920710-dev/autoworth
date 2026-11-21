@@ -24,3 +24,7 @@ services:
         sync: false
       - key: DB_PATH
         value: ./autoworth.db
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false

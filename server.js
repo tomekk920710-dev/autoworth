@@ -8,6 +8,7 @@ import Stripe from "stripe";
 import PDFDocument from "pdfkit";
 import path from "path";
 import {fileURLToPath} from "url";
+import {randomBytes,createHash} from "crypto";
 
 const __dirname=path.dirname(fileURLToPath(import.meta.url));
 const app=express(), PORT=process.env.PORT||3000;
@@ -45,12 +46,15 @@ db.pragma("journal_mode = WAL");
 db.exec(`CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT,email TEXT UNIQUE NOT NULL,password_hash TEXT NOT NULL,plan TEXT DEFAULT "free",report_credits INTEGER DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,title TEXT NOT NULL,workflow TEXT NOT NULL,analysis_json TEXT NOT NULL,economics_json TEXT NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(user_id) REFERENCES users(id));
 CREATE TABLE IF NOT EXISTS stripe_events(id TEXT PRIMARY KEY,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
-CREATE TABLE IF NOT EXISTS checkout_sessions(id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,status TEXT NOT NULL DEFAULT "created",created_at TEXT DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(user_id) REFERENCES users(id));`);
+CREATE TABLE IF NOT EXISTS checkout_sessions(id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,status TEXT NOT NULL DEFAULT "created",created_at TEXT DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(user_id) REFERENCES users(id));
+CREATE TABLE IF NOT EXISTS auth_tokens(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,token_hash TEXT UNIQUE NOT NULL,kind TEXT NOT NULL,expires_at INTEGER NOT NULL,used_at INTEGER,created_at TEXT DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(user_id) REFERENCES users(id));`);
+const userColumns=db.pragma("table_info(users)");
+if(!userColumns.some(c=>c.name==="email_verified_at")){db.exec("ALTER TABLE users ADD COLUMN email_verified_at TEXT");db.exec("UPDATE users SET email_verified_at=CURRENT_TIMESTAMP WHERE email_verified_at IS NULL");}
 const reportColumns=db.pragma("table_info(reports)");
 if(!reportColumns.some(c=>c.name==="payment_session_id")) db.exec("ALTER TABLE reports ADD COLUMN payment_session_id TEXT");
 db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_payment_session ON reports(user_id,payment_session_id) WHERE payment_session_id IS NOT NULL");
 const q={userByEmail:db.prepare("SELECT * FROM users WHERE email=?"),userById:db.prepare("SELECT id,email FROM users WHERE id=?"),
-insertUser:db.prepare("INSERT INTO users(email,password_hash) VALUES(?,?)"),insertReport:db.prepare("INSERT INTO reports(user_id,title,workflow,analysis_json,economics_json) VALUES(?,?,?,?,?)"),
+insertUser:db.prepare("INSERT INTO users(email,password_hash,email_verified_at) VALUES(?,?,NULL)"),insertReport:db.prepare("INSERT INTO reports(user_id,title,workflow,analysis_json,economics_json) VALUES(?,?,?,?,?)"),
 insertPaidReport:db.prepare("INSERT INTO reports(user_id,title,workflow,analysis_json,economics_json,payment_session_id) VALUES(?,?,?,?,?,?)"),
 paidCheckout:db.prepare("SELECT id FROM checkout_sessions WHERE id=? AND user_id=? AND status='paid'"),
 reportByPaymentSession:db.prepare("SELECT id FROM reports WHERE user_id=? AND payment_session_id=?"),
@@ -58,7 +62,12 @@ reports:db.prepare("SELECT id,title,created_at FROM reports WHERE user_id=? ORDE
 insertCheckout:db.prepare("INSERT OR REPLACE INTO checkout_sessions(id,user_id,status) VALUES(?,?,?)"),
 checkout:db.prepare("SELECT * FROM checkout_sessions WHERE id=?"),
 eventExists:db.prepare("SELECT id FROM stripe_events WHERE id=?"),
-insertEvent:db.prepare("INSERT INTO stripe_events(id) VALUES(?)")
+insertEvent:db.prepare("INSERT INTO stripe_events(id) VALUES(?)"),
+insertAuthToken:db.prepare("INSERT INTO auth_tokens(user_id,token_hash,kind,expires_at) VALUES(?,?,?,?)"),
+authToken:db.prepare("SELECT * FROM auth_tokens WHERE token_hash=? AND kind=? AND used_at IS NULL AND expires_at>?"),
+consumeAuthToken:db.prepare("UPDATE auth_tokens SET used_at=? WHERE id=? AND used_at IS NULL"),
+verifyUser:db.prepare("UPDATE users SET email_verified_at=CURRENT_TIMESTAMP WHERE id=?"),
+updatePassword:db.prepare("UPDATE users SET password_hash=? WHERE id=?")
 };
 
 function token(user){return jwt.sign({id:user.id,email:user.email},JWT_SECRET,{expiresIn:"7d"})}
@@ -86,9 +95,27 @@ For the workflow itself, infer the actual operational steps from the user's text
 
 function fallback(t){let s=[];const rules=[[/email|request|form|message|ticket/,"Receive / read input","input",88,"Low","AUTOMATE"],[/copy|paste|extract|crm|spreadsheet|database|enter/,"Extract / store data","data",94,"Low","AUTOMATE"],[/categor|classif|triage|sort|route/,"Classify / route","decision",82,"Medium","AUTOMATE"],[/price|pricing|quote|calculate/,"Calculate / quote","calculation",76,"Medium","AUGMENT"],[/reply|respond|answer|draft|send/,"Draft / send response","language",78,"Medium","AUGMENT"],[/schedule|calendar|follow.?up|reminder/,"Schedule / follow up","workflow",90,"Low","AUTOMATE"],[/complaint|refund|payment|financial|legal|medical|safety/,"Sensitive decision","high_risk",25,"High","KEEP_HUMAN"],[/negotiat|sales call|close|escalat/,"Judgement / negotiation","judgement",35,"High","KEEP_HUMAN"]];for(const[r,n,type,p,risk,m]of rules)if(r.test(t.toLowerCase()))s.push({id:s.length+1,name:n,description:"Fallback detection.",type,automation_potential:p,risk,recommended_mode:m,human_required:m!=="AUTOMATE",estimated_time_share_pct:Math.round(100/Math.max(1,s.length+1)),rationale:"Fallback mode."});if(!s.length)s=[{id:1,name:"Process / output",description:"More detail needed.",type:"unknown",automation_potential:50,risk:"Unknown",recommended_mode:"AUGMENT",human_required:true,estimated_time_share_pct:100,rationale:"More detail needed."}];return{workflow_summary:"Fallback interpretation",confidence:55,assumptions:["Configure OPENAI_API_KEY for live AI"],flags:[],steps:s,recommended_architecture:["Trigger","AI / rules","Validation","Human exception queue","Output","Monitoring"],build_plan:[{step:1,action:"Run shadow pilot",purpose:"Measure actual performance",success_metric:"Target exception rate met"},{step:2,action:"Add validation",purpose:"Protect outputs",success_metric:"No critical errors"},{step:3,action:"Recalculate economics",purpose:"Validate case",success_metric:"Actual savings beat target"}],ai_tasks:[{task:"Extract fields",input:"Workflow data",output:"Structured fields",guardrail:"Reject low-confidence values"}]};}
 
-app.get("/api/health",(req,res)=>res.json({ok:true,ai_enabled:Boolean(process.env.OPENAI_API_KEY),db:true,model:MODEL}));
-app.post("/api/auth/register",rateLimit({windowMs:900000,max:10,keyPrefix:"register"}),async(req,res)=>{try{const email=String(req.body.email||"").trim().toLowerCase(),pw=String(req.body.password||"");if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)||pw.length<8)return res.status(400).json({error:"Use a valid email and an 8+ character password."});const hash=await bcrypt.hash(pw,12);const info=q.insertUser.run(email,hash);res.cookie("autoworth_token",token({id:info.lastInsertRowid,email}),{httpOnly:true,sameSite:"lax",secure:process.env.NODE_ENV==="production",maxAge:604800000});res.json({user:{id:info.lastInsertRowid,email}})}catch(e){if(String(e).includes("UNIQUE"))return res.status(409).json({error:"An account with this email already exists."});res.status(500).json({error:"Registration failed."})}});
-app.post("/api/auth/login",rateLimit({windowMs:900000,max:15,keyPrefix:"login"}),async(req,res)=>{const email=String(req.body.email||"").trim().toLowerCase(),pw=String(req.body.password||""),u=q.userByEmail.get(email);if(!u||!(await bcrypt.compare(pw,u.password_hash)))return res.status(401).json({error:"Invalid email or password."});res.cookie("autoworth_token",token(u),{httpOnly:true,sameSite:"lax",secure:process.env.NODE_ENV==="production",maxAge:604800000});res.json({user:{id:u.id,email:u.email}})});
+app.get("/api/health",(req,res)=>res.json({ok:true,ai_enabled:Boolean(process.env.OPENAI_API_KEY),email_enabled:Boolean(process.env.RESEND_API_KEY&&process.env.EMAIL_FROM),db:true,model:MODEL}));
+async function sendAuthEmail(to,subject,html){
+  if(!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) throw new Error("EMAIL_NOT_CONFIGURED");
+  const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:`Bearer ${process.env.RESEND_API_KEY}`,"Content-Type":"application/json"},body:JSON.stringify({from:process.env.EMAIL_FROM,to:[to],subject,html})});
+  if(!response.ok){const body=await response.text();console.error("Email provider error:",body);throw new Error("EMAIL_SEND_FAILED");}
+}
+function issueAuthToken(userId,kind,ttlSeconds){const raw=randomBytes(32).toString("hex"),hash=createHash("sha256").update(raw).digest("hex");q.insertAuthToken.run(userId,hash,kind,Math.floor(Date.now()/1000)+ttlSeconds);return raw;}
+function appOrigin(req){return String(process.env.PUBLIC_APP_URL||`${req.protocol}://${req.get("host")}`).replace(/\/$/,"");}
+app.post("/api/auth/register",rateLimit({windowMs:900000,max:10,keyPrefix:"register"}),async(req,res)=>{try{
+ const email=String(req.body.email||"").trim().toLowerCase(),pw=String(req.body.password||"");
+ if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)||pw.length<10)return res.status(400).json({error:"Enter a valid email and a password with at least 10 characters."});
+ const hash=await bcrypt.hash(pw,12),info=q.insertUser.run(email,hash),uid=Number(info.lastInsertRowid),raw=issueAuthToken(uid,"verify",86400),link=`${appOrigin(req)}/?verify=${encodeURIComponent(raw)}`;
+ try{await sendAuthEmail(email,"Confirm your AutoWorth email",`<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;color:#172033"><h1>Welcome to AutoWorth</h1><p>Your next efficiency improvement starts here.</p><p>Confirm your email address to activate your account and save your workflow reports.</p><p><a href="${link}" style="display:inline-block;background:#172033;color:#fff;padding:14px 22px;border-radius:8px;text-decoration:none">Verify email address</a></p><p>This link expires in 24 hours. If you did not create this account, you can ignore this message.</p></div>`);}
+ catch(e){db.prepare("DELETE FROM auth_tokens WHERE user_id=? AND kind='verify'").run(uid);db.prepare("DELETE FROM users WHERE id=?").run(uid);if(e.message==="EMAIL_NOT_CONFIGURED")return res.status(503).json({error:"Email delivery is not configured yet. Please contact support; account creation is temporarily unavailable."});return res.status(502).json({error:"We could not send the verification email. Please try again shortly."});}
+ res.json({verificationRequired:true,message:"Check your inbox to verify your email address."});
+ }catch(e){if(String(e).includes("UNIQUE"))return res.status(409).json({error:"An account with this email already exists. Try signing in instead."});console.error(e);res.status(500).json({error:"Registration failed."})}});
+app.post("/api/auth/verify",rateLimit({windowMs:900000,max:20,keyPrefix:"verify"}),(req,res)=>{const raw=String(req.body.token||""),hash=createHash("sha256").update(raw).digest("hex"),row=q.authToken.get(hash,"verify",Math.floor(Date.now()/1000));if(!row)return res.status(400).json({error:"This verification link is invalid or has expired. Request a new one."});db.transaction(()=>{q.consumeAuthToken.run(Math.floor(Date.now()/1000),row.id);q.verifyUser.run(row.user_id)})();const u=q.userById.get(row.user_id);res.cookie("autoworth_token",token(u),{httpOnly:true,sameSite:"lax",secure:process.env.NODE_ENV==="production",maxAge:604800000});res.json({user:u,message:"Email verified. Welcome to AutoWorth."})});
+app.post("/api/auth/resend-verification",rateLimit({windowMs:900000,max:5,keyPrefix:"resendverify"}),async(req,res)=>{const email=String(req.body.email||"").trim().toLowerCase(),u=q.userByEmail.get(email);if(u&&!u.email_verified_at){const raw=issueAuthToken(u.id,"verify",86400),link=`${appOrigin(req)}/?verify=${encodeURIComponent(raw)}`;try{await sendAuthEmail(email,"Your AutoWorth verification link",`<p>Confirm your email:</p><p><a href="${link}">Verify email address</a></p><p>This link expires in 24 hours.</p>`)}catch(e){return res.status(503).json({error:"We could not send the email. Please try again later."})}}res.json({message:"If this address has an unverified account, a new verification email has been sent."})});
+app.post("/api/auth/forgot-password",rateLimit({windowMs:900000,max:5,keyPrefix:"forgot"}),async(req,res)=>{const email=String(req.body.email||"").trim().toLowerCase(),u=q.userByEmail.get(email);if(u){const raw=issueAuthToken(u.id,"reset",3600),link=`${appOrigin(req)}/?reset=${encodeURIComponent(raw)}`;try{await sendAuthEmail(email,"Reset your AutoWorth password",`<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto"><h1>Password reset</h1><p>We received a request to reset your AutoWorth password.</p><p><a href="${link}">Choose a new password</a></p><p>This one-time link expires in one hour. If you did not request this, ignore this email.</p></div>`)}catch(e){return res.status(503).json({error:"Password reset email could not be sent. Please try again later."})}}res.json({message:"If an account exists for that email, a password reset link has been sent."})});
+app.post("/api/auth/reset-password",rateLimit({windowMs:900000,max:10,keyPrefix:"reset"}),async(req,res)=>{const raw=String(req.body.token||""),pw=String(req.body.password||"");if(pw.length<10)return res.status(400).json({error:"Use a password with at least 10 characters."});const hash=createHash("sha256").update(raw).digest("hex"),row=q.authToken.get(hash,"reset",Math.floor(Date.now()/1000));if(!row)return res.status(400).json({error:"This reset link is invalid, expired or already used."});const pwHash=await bcrypt.hash(pw,12);db.transaction(()=>{q.updatePassword.run(pwHash,row.user_id);q.consumeAuthToken.run(Math.floor(Date.now()/1000),row.id)})();res.clearCookie("autoworth_token");res.json({message:"Password updated. You can now sign in with your new password."})});
+app.post("/api/auth/login",rateLimit({windowMs:900000,max:15,keyPrefix:"login"}),async(req,res)=>{const email=String(req.body.email||"").trim().toLowerCase(),pw=String(req.body.password||""),u=q.userByEmail.get(email);if(!u||!(await bcrypt.compare(pw,u.password_hash)))return res.status(401).json({error:"Invalid email or password."});if(!u.email_verified_at)return res.status(403).json({error:"Please verify your email before signing in. You can request a new verification email."});res.cookie("autoworth_token",token(u),{httpOnly:true,sameSite:"lax",secure:process.env.NODE_ENV==="production",maxAge:604800000});res.json({user:{id:u.id,email:u.email}})});
 app.post("/api/auth/logout",(req,res)=>{res.clearCookie("autoworth_token");res.json({ok:true})});
 app.get("/api/auth/me",auth,(req,res)=>res.json({user:q.userById.get(req.user.id)}));
 function fulfillPaidSession(session){
@@ -240,4 +267,4 @@ app.get("/api/reports/:id/pdf",auth,(req,res)=>{
 });
 app.delete("/api/reports/:id",auth,(req,res)=>{q.deleteReport.run(Number(req.params.id),req.user.id);res.json({ok:true})});
 app.get("/{*splat}",(req,res)=>res.sendFile(path.join(__dirname,"index.html")));
-app.listen(PORT,()=>console.log("AutoWorth V1.5.7 on http://localhost:"+PORT));
+app.listen(PORT,()=>console.log("AutoWorth V2.0 on http://localhost:"+PORT));
