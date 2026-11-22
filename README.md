@@ -1,4 +1,4 @@
-# AutoWorth V2.2.0
+# AutoWorth V2.3.0
 
 Premium workflow automation analysis SaaS. The app provides AI workflow interpretation, deterministic economics, risk-aware decisions, saved reports, PDF export and Stripe Full Report checkout.
 
@@ -42,3 +42,8 @@ Each analysis now returns eight structured economics assumptions. Values are mar
 - PDF export uses a clearer report hierarchy, executive decision panel, economics summary, readable workflow steps, architecture and implementation plan. Long reports flow across pages with consistent page headers and footers.
 - Saved reports can be renamed from the report list. Names are limited to 80 characters and are updated server-side for the signed-in owner only.
 - Existing Stripe Test/Sandbox checkout and paid-report recovery logic are unchanged.
+
+
+## V2.3 PDF quality
+- Redesigned PDF report with stronger contrast, KPI cards, a monthly cost comparison chart, clearer financial adjustments and consistent pagination.
+- PDF filenames now follow the Saved Report title when downloaded.

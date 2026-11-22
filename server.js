@@ -290,80 +290,127 @@ app.patch("/api/reports/:id/title",auth,(req,res)=>{
 });
 
 app.get("/api/reports/:id/pdf",auth,(req,res)=>{
-  const r=q.report.get(Number(req.params.id),req.user.id);
+  const reportId=Number(req.params.id);
+  if(!Number.isInteger(reportId)||reportId<=0)return res.status(400).json({error:"Invalid report ID."});
+  const r=q.report.get(reportId,req.user.id);
   if(!r)return res.status(404).json({error:"Report not found"});
-  const a=JSON.parse(r.analysis_json)||{}, e=JSON.parse(r.economics_json)||{};
+  let a={},e={};
+  try{a=JSON.parse(r.analysis_json)||{};e=JSON.parse(r.economics_json)||{};}catch{return res.status(500).json({error:"This report could not be read."});}
   const steps=Array.isArray(a.steps)?a.steps:[], architecture=Array.isArray(a.recommended_architecture)?a.recommended_architecture:[], plan=Array.isArray(a.build_plan)?a.build_plan:[];
   const safe=(v,fallback="Not provided")=>typeof v==="string"&&v.trim()?v.trim():fallback;
-  const money=v=>Number.isFinite(Number(v))?`$${Number(v).toLocaleString("en-US",{maximumFractionDigits:0})}`:"—";
+  const numeric=v=>v!==null&&v!==undefined&&v!==""&&Number.isFinite(Number(v));
+  const money=v=>numeric(v)?`$${Number(v).toLocaleString("en-US",{minimumFractionDigits:0,maximumFractionDigits:0})}`:"—";
+  const pct=v=>numeric(v)?`${(Number(v)*100).toFixed(1)}%`:"—";
+  const cleanTitle=String(r.title||"AutoWorth Report").normalize("NFC").replace(/[\\/:*?\"<>|\x00-\x1F]/g," ").replace(/\s+/g," ").trim().replace(/[. ]+$/g,"").slice(0,90)||"AutoWorth Report";
+  const fallbackName=cleanTitle.normalize("NFKD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-zA-Z0-9 _-]/g,"").trim().replace(/[ _]+/g,"-").replace(/-+/g,"-").slice(0,80)||`AutoWorth-Report-${r.id}`;
+  const filename=`${fallbackName}.pdf`;
+  const encodedFilename=encodeURIComponent(`${cleanTitle}.pdf`).replace(/[!'()*]/g,c=>`%${c.charCodeAt(0).toString(16).toUpperCase()}`);
   res.setHeader("Content-Type","application/pdf");
-  res.setHeader("Content-Disposition",`attachment; filename="AutoWorth-${r.id}-Full-Report.pdf"`);
-  const doc=new PDFDocument({size:"A4",margin:54,bufferPages:true,info:{Title:`AutoWorth — ${r.title}`,Author:"AutoWorth",Subject:"Workflow automation economics and implementation report"}});
-  doc.pipe(res);
-  const ink="#172033",muted="#64748b",blue="#315cf5",mint="#d9f7eb",line="#e3e9f1";
-  const heading=(label)=>{doc.moveDown(.55);doc.font("Helvetica-Bold").fontSize(13).fillColor(ink).text(label,{continued:false});doc.moveTo(54,doc.y+5).lineTo(541,doc.y+5).strokeColor(line).lineWidth(.7).stroke();doc.moveDown(.65);};
-  const paragraph=(value,opts={})=>{doc.font(opts.bold?"Helvetica-Bold":"Helvetica").fontSize(opts.size||9.5).fillColor(opts.color||ink).text(safe(value),{width:487,lineGap:3,paragraphGap:4});};
-  const bullet=(value)=>{doc.font("Helvetica").fontSize(9.3).fillColor(ink).text("•  "+safe(value),{width:475,indent:0,lineGap:2,paragraphGap:3});};
-  const labelValue=(label,value)=>{doc.font("Helvetica-Bold").fontSize(9).fillColor(muted).text(label.toUpperCase(),{continued:true});doc.font("Helvetica").fontSize(9.5).fillColor(ink).text("   "+safe(String(value)));};
+  res.setHeader("Content-Disposition",`attachment; filename="${filename}"; filename*=UTF-8''${encodedFilename}`);
+  res.setHeader("Cache-Control","private, no-store");
 
-  // Cover-style report header
-  doc.roundedRect(54,48,487,78,12).fill("#101b31");
-  doc.font("Helvetica-Bold").fontSize(21).fillColor("#ffffff").text("AutoWorth",72,64);
-  doc.font("Helvetica").fontSize(9).fillColor("#cbd5e1").text("WORKFLOW AUTOMATION DECISION REPORT",72,94);
-  doc.moveDown(5.1);
-  doc.font("Helvetica-Bold").fontSize(19).fillColor(ink).text(safe(r.title,"Untitled workflow"),{width:487});
+  const W=595.28,H=841.89,left=52,right=543,contentW=491,bottom=760;
+  const ink="#17243b",muted="#64748b",blue="#315cf5",navy="#101b31",mint="#dff7ed",line="#e5eaf2",pale="#f3f6fc",green="#087f5b",amber="#a16207";
+  const doc=new PDFDocument({size:"A4",margin:{top:66,bottom:78,left,right:52},bufferPages:true,compress:true,info:{Title:`AutoWorth — ${cleanTitle}`,Author:"AutoWorth",Subject:"Workflow automation economics and implementation report",Keywords:"workflow automation, ROI, business process"}});
+  doc.pipe(res);
+  const ensure=(height=36)=>{if(doc.y+height>bottom)doc.addPage()};
+  const paragraph=(value,opts={})=>{const textValue=safe(value);doc.font(opts.bold?"Helvetica-Bold":"Helvetica").fontSize(opts.size||9.6).fillColor(opts.color||ink).text(textValue,{width:contentW,lineGap:opts.lineGap??3,paragraphGap:opts.paragraphGap??4});};
+  const heading=(label)=>{ensure(48);doc.moveDown(.35);doc.font("Helvetica-Bold").fontSize(13).fillColor(ink).text(label,{width:contentW});doc.moveDown(.22);const y=doc.y;doc.moveTo(left,y).lineTo(right,y).strokeColor(line).lineWidth(.8).stroke();doc.moveDown(.55);};
+  const bullet=(value)=>{ensure(28);const y=doc.y;doc.circle(left+4,y+5,2).fill(blue);doc.font("Helvetica").fontSize(9.3).fillColor(ink).text(safe(value),left+14,y-1,{width:contentW-14,lineGap:2,paragraphGap:3});};
+  const labelValue=(label,value)=>{ensure(20);doc.font("Helvetica-Bold").fontSize(8.2).fillColor(muted).text(String(label).toUpperCase(),left,doc.y,{width:260,continued:true});doc.font("Helvetica-Bold").fontSize(9.2).fillColor(ink).text(`  ${safe(String(value))}`,{width:contentW-260});};
+  const card=(x,y,w,h,label,value,accent=blue)=>{doc.roundedRect(x,y,w,h,9).fill(pale);doc.roundedRect(x,y,4,h,2).fill(accent);doc.font("Helvetica-Bold").fontSize(7.5).fillColor(muted).text(label.toUpperCase(),x+13,y+11,{width:w-24});doc.font("Helvetica-Bold").fontSize(16).fillColor(ink).text(String(value),x+13,y+27,{width:w-24});};
+
+  // Branded report cover and executive decision
+  doc.roundedRect(left,48,contentW,82,12).fill(navy);
+  doc.font("Helvetica-Bold").fontSize(23).fillColor("#ffffff").text("AutoWorth",left+19,65);
+  doc.font("Helvetica").fontSize(8.5).fillColor("#cbd5e1").text("WORKFLOW AUTOMATION DECISION REPORT",left+20,99);
+  doc.moveDown(3.2);
+  doc.font("Helvetica-Bold").fontSize(19).fillColor(ink).text(cleanTitle,{width:contentW});
   doc.moveDown(.25);
   doc.font("Helvetica").fontSize(8.5).fillColor(muted).text(`Prepared ${new Date(r.created_at).toLocaleString("en-US",{dateStyle:"medium",timeStyle:"short"})}  •  Report #${r.id}`);
-  doc.moveDown(1.1);
-
-  // Executive decision panel
-  const panelY=doc.y;
-  doc.roundedRect(54,panelY,487,105,12).fill("#f1f5ff");
-  doc.font("Helvetica-Bold").fontSize(8).fillColor(blue).text("EXECUTIVE DECISION",72,panelY+14);
-  doc.font("Helvetica-Bold").fontSize(23).fillColor(ink).text(`${Number.isFinite(Number(e.score))?Number(e.score):"—"}/100  —  ${safe(e.mode,"NOT AVAILABLE")}`,72,panelY+31,{width:445});
-  doc.font("Helvetica").fontSize(9.5).fillColor(muted).text(`Risk-adjusted monthly saving: ${money(e.saving)}     •     Payback: ${e.payback===null||e.payback===undefined?"—":`${Number(e.payback).toFixed(1)} months`}`,72,panelY+72,{width:445});
-  doc.y=panelY+121;
+  doc.moveDown(1.0);
+  const score=numeric(e.score)?Number(e.score):null,mode=safe(e.mode,"NOT AVAILABLE");
+  const decisionY=doc.y;
+  doc.roundedRect(left,decisionY,contentW,92,11).fill("#edf2ff");
+  doc.font("Helvetica-Bold").fontSize(8).fillColor(blue).text("EXECUTIVE DECISION",left+16,decisionY+13);
+  doc.font("Helvetica-Bold").fontSize(24).fillColor(ink).text(`${score===null?"—":score}/100`,left+16,decisionY+31);
+  doc.font("Helvetica-Bold").fontSize(14).fillColor(blue).text(mode,left+155,decisionY+39,{width:300});
+  doc.font("Helvetica").fontSize(8.7).fillColor(muted).text(`Risk-adjusted monthly saving: ${money(e.saving)}     •     Payback: ${numeric(e.payback)?`${Number(e.payback).toFixed(1)} months`:"—"}`,left+16,decisionY+69,{width:contentW-32});
+  doc.y=decisionY+108;
 
   heading("Workflow summary");
-  paragraph(a.workflow_summary,{size:9.5});
+  paragraph(a.workflow_summary,{size:9.7});
 
   heading("Economics overview");
-  if(Number.isFinite(Number(e.current))){
-    const rows=[['Current monthly cost',money(e.current)],['Automation + human review',money(e.automation)],['Risk-adjusted monthly saving',money(e.saving)],['Assumed AI error rate',`${(Number(e.errorRate||0)*100).toFixed(1)}%`],['Estimated payback',e.payback===null||e.payback===undefined?'—':`${Number(e.payback).toFixed(1)} months`]];
-    rows.forEach(([k,v])=>labelValue(k,v));
-  }else paragraph("Economics could not be calculated from the saved assumptions. Add workload volume and time-per-task data to estimate ROI.");
+  const current=numeric(e.current)?Number(e.current):null,automation=numeric(e.automation)?Number(e.automation):null,saving=numeric(e.saving)?Number(e.saving):null;
+  const metrics=[
+    ["Current monthly cost",money(e.current),blue],
+    ["Automation + review",money(e.automation),"#0f8b70"],
+    ["Risk-adjusted saving",money(e.saving),"#0f8b70"],
+    ["Estimated payback",numeric(e.payback)?`${Number(e.payback).toFixed(1)} mo`:"—",amber]
+  ];
+  const gridY=doc.y;
+  metrics.forEach((m,i)=>card(left+(i%2)*250,gridY+Math.floor(i/2)*65,240,54,m[0],m[1],m[2]));
+  doc.y=gridY+132;
+  if(current!==null&&automation!==null){
+    ensure(100);
+    doc.font("Helvetica-Bold").fontSize(9).fillColor(ink).text("Monthly cost comparison");
+    const chartY=doc.y+10,barX=left+130,barW=285,max=Math.max(current,automation,1);
+    [["Current",current,blue],["With automation",automation,"#0f8b70"]].forEach((item,i)=>{
+      const y=chartY+i*31;
+      doc.font("Helvetica").fontSize(8.5).fillColor(muted).text(item[0],left,y+3,{width:125});
+      doc.roundedRect(barX,y,barW,13,5).fill("#edf1f7");
+      doc.roundedRect(barX,y,Math.max(3,barW*item[1]/max),13,5).fill(item[2]);
+      doc.font("Helvetica-Bold").fontSize(8.5).fillColor(ink).text(money(item[1]),barX+barW+7,y+2,{width:65});
+    });
+    doc.y=chartY+70;
+    if(saving!==null){
+      const preRisk=current-automation,adjustment=preRisk-saving;
+      doc.font("Helvetica").fontSize(8).fillColor(muted).text(`Monthly difference before risk adjustment: ${money(preRisk)}. Risk/quality adjustment: ${money(adjustment)}. Final risk-adjusted saving: ${money(saving)}.`,left,doc.y,{width:contentW});
+    }
+  }
+  if(numeric(e.errorRate))labelValue("Assumed AI error rate",pct(e.errorRate));
+  if(numeric(e.reviewRate))labelValue("Human review rate",pct(e.reviewRate));
+  if(numeric(e.setup))labelValue("One-time implementation cost",money(e.setup));
+  if(numeric(e.tasks))labelValue("Monthly task volume",Number(e.tasks).toLocaleString("en-US"));
+  if(numeric(e.mins))labelValue("Current handling time per task",`${Number(e.mins).toFixed(1)} minutes`);
 
-  if(Array.isArray(e.notes)&&e.notes.length){heading("Economics assumptions and notes");e.notes.forEach(bullet)}
+  if(Array.isArray(e.notes)&&e.notes.length){heading("Economics notes");e.notes.forEach(bullet)}
   if(Array.isArray(a.assumptions)&&a.assumptions.length){heading("Analysis assumptions");a.assumptions.forEach(bullet)}
   if(Array.isArray(a.flags)&&a.flags.length){heading("Important flags");a.flags.forEach(bullet)}
 
   heading("Workflow steps");
   steps.forEach((step,i)=>{
-    doc.moveDown(.35);
-    doc.font("Helvetica-Bold").fontSize(10).fillColor(ink).text(`${i+1}. ${safe(step.name,"Workflow step")}  —  ${safe(step.recommended_mode,"REVIEW")}  —  ${safe(step.risk,"Unknown")} risk`,{width:487});
+    ensure(76);
+    doc.font("Helvetica-Bold").fontSize(10).fillColor(ink).text(`${i+1}. ${safe(step.name,"Workflow step")}`,{width:contentW});
+    doc.font("Helvetica-Bold").fontSize(8.2).fillColor(blue).text(`${safe(step.recommended_mode,"REVIEW")}  •  ${safe(step.risk,"Unknown")} risk`,{width:contentW});
     if(step.description)paragraph(step.description,{size:8.8,color:muted});
-    const potential=Number.isFinite(Number(step.automation_potential))?`${Math.round(Number(step.automation_potential))}%`:"—";
+    const potential=numeric(step.automation_potential)?`${Math.round(Number(step.automation_potential))}%`:"—";
     paragraph(`Automation potential: ${potential}. ${safe(step.rationale)}`,{size:8.8});
-    if(step.human_required===true)paragraph("Human oversight required for this step.",{size:8.5,bold:true,color:"#8a5a00"});
+    if(step.human_required===true)paragraph("Human oversight required for this step.",{size:8.5,bold:true,color:amber});
+    doc.moveDown(.35);
   });
 
-  if(architecture.length){heading("Recommended architecture");architecture.forEach((item,i)=>{doc.font("Helvetica-Bold").fontSize(8).fillColor(blue).text(`STEP ${i+1}`,{continued:false});paragraph(item,{size:9});doc.moveDown(.2)})}
+  if(architecture.length){heading("Recommended architecture");architecture.forEach((item,i)=>{ensure(42);doc.font("Helvetica-Bold").fontSize(8).fillColor(blue).text(`STEP ${i+1}`);paragraph(item,{size:9.2});doc.moveDown(.2)});}
   if(plan.length){heading("Implementation build plan");plan.forEach((item,i)=>{
-    doc.moveDown(.35);
-    doc.font("Helvetica-Bold").fontSize(9.5).fillColor(ink).text(`${i+1}. ${safe(item.action,"Implementation step")}`,{width:487});
+    ensure(60);
+    doc.font("Helvetica-Bold").fontSize(9.5).fillColor(ink).text(`${i+1}. ${safe(item.action,"Implementation step")}`,{width:contentW});
     if(item.purpose)paragraph(`Purpose: ${item.purpose}`,{size:8.8});
     if(item.success_metric)paragraph(`Success measure: ${item.success_metric}`,{size:8.8,color:muted});
-  })}
-  doc.moveDown(1);
-  doc.roundedRect(54,doc.y,487,48,8).fill("#f6f8fc");
-  doc.font("Helvetica").fontSize(8).fillColor(muted).text("This report is a scenario estimate, not a guarantee of savings. Validate assumptions through a controlled pilot, retain human oversight for sensitive decisions, and review actual performance before production rollout.",{width:455,align:"left"}).moveDown(1);
+    doc.moveDown(.25);
+  });}
+  ensure(65);
+  doc.moveDown(.5);
+  const noteY=doc.y;
+  doc.roundedRect(left,noteY,contentW,48,8).fill(pale);
+  doc.font("Helvetica").fontSize(8).fillColor(muted).text("This report is a scenario estimate, not a guarantee of savings. Validate assumptions through a controlled pilot, retain human oversight for sensitive decisions, and review actual performance before production rollout.",left+12,noteY+11,{width:contentW-24,lineGap:2});
 
-  // Consistent running header and page numbering on every page, including pages created by long sections.
+  // Consistent running header and footer, added after all pages are composed.
   const range=doc.bufferedPageRange();
   for(let i=range.start;i<range.start+range.count;i++){
     doc.switchToPage(i);
-    if(i>0){doc.save();doc.font("Helvetica-Bold").fontSize(8).fillColor(blue).text("AUTOWORTH",54,28);doc.font("Helvetica").fontSize(8).fillColor(muted).text("FULL AUTOMATION ECONOMICS REPORT",380,28,{width:161,align:"right"});doc.moveTo(54,43).lineTo(541,43).strokeColor(line).lineWidth(.6).stroke();doc.restore();}
-    doc.save();doc.moveTo(54,758).lineTo(541,758).strokeColor(line).lineWidth(.6).stroke();doc.font("Helvetica").fontSize(8).fillColor(muted).text("AutoWorth  •  Confidential business workflow analysis",54,768,{width:390});doc.text(`Page ${i+1} of ${range.count}`,444,768,{width:97,align:"right"});doc.restore();
+    if(i>0){doc.save();doc.font("Helvetica-Bold").fontSize(8).fillColor(blue).text("AUTOWORTH",left,27);doc.font("Helvetica").fontSize(8).fillColor(muted).text("FULL AUTOMATION ECONOMICS REPORT",right-190,27,{width:190,align:"right"});doc.moveTo(left,42).lineTo(right,42).strokeColor(line).lineWidth(.7).stroke();doc.restore();}
+    doc.save();doc.moveTo(left,780).lineTo(right,780).strokeColor(line).lineWidth(.7).stroke();doc.font("Helvetica").fontSize(7.8).fillColor(muted).text("AutoWorth  •  Confidential business workflow analysis",left,790,{width:330});doc.text(`Page ${i+1} of ${range.count}`,right-95,790,{width:95,align:"right"});doc.restore();
   }
   doc.end();
 });

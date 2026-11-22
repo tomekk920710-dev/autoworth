@@ -1,0 +1,12 @@
+AutoWorth V2.3.0 — PDF quality and report-name export
+
+- Rebuilt the PDF export layout with stronger typography, contrast, spacing and clearer section hierarchy.
+- Added compact KPI cards and a visual comparison of current monthly cost vs automation + human review.
+- Made the risk/quality adjustment between gross monthly difference and risk-adjusted savings explicit.
+- Improved page flow and added consistent page numbering and running headers/footers.
+- PDF download filename now follows the saved report title, including safe handling of special characters and Unicode names.
+- Existing Saved Reports, Rename, report IDs, payment-session mapping and Stripe Sandbox checkout logic are preserved.
+
+Validation
+- Node syntax check passed for server.js.
+- Browser scripts syntax validation and full live PDF/browser rendering QA are still required after deployment.
