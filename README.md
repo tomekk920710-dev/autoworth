@@ -33,3 +33,6 @@ The included Render blueprint lists the required environment variables but does 
 This build keeps the existing SQLite application code and moves the database to `/var/data/autoworth.db` on a Render persistent disk. The Render service must use the Starter web-service plan and have a 1 GB persistent disk mounted at `/var/data`. The first boot copies the previous local `autoworth.db` into the persistent disk if the destination database does not exist. This is a one-time migration safeguard; it does not replace a separate backup strategy.
 
 Important: persistent disks are attached to one service instance and prevent horizontal scaling. This is an economical early-stage setup for the current single-instance application. For growth or multiple instances, migrate to managed PostgreSQL.
+
+### V2.1 economics extraction
+Each analysis now returns eight structured economics assumptions. Values are marked as explicit or estimated, and the UI clears prior values before each new workflow to prevent stale assumptions. Estimated values should be verified before relying on savings forecasts.

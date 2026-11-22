@@ -1,0 +1,9 @@
+AutoWorth V2.1.0 — Automatic Economics Extraction
+
+- The workflow analysis response now includes structured economics extraction for all eight assumptions.
+- Explicit values from the current workflow are separated from AI-estimated values.
+- Estimates are visibly labeled and accompanied by explanatory notes; users can edit every field.
+- Each new analysis clears the previous workflow's assumptions so stale values cannot leak into a new calculation.
+- Daily volumes are normalized to a 22-working-day month by the AI extraction instructions.
+- A conservative fallback economics estimate is supplied if the live AI service is unavailable; fallback estimates are labeled.
+- Stripe configuration and payment flow are unchanged.

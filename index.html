@@ -21,7 +21,7 @@ function awPurchase(value){if(typeof window.gtag==="function" && window.AW_TRACK
 <div class="kpi"><small>4</small><strong>Decide</strong><span class="muted">Build, buy or keep human</span></div>
 </section>
 <section class="card"><h2>Describe the workflow</h2><textarea id="w" placeholder="Example: Every morning an employee checks 80 customer emails, copies order details into our CRM, categorizes each request, answers simple questions and creates follow-up tasks. Refund disputes go to a manager."></textarea><div class="actions"><button id="go">Analyze + calculate</button><button class="alt" id="demo">Load demo</button></div><p id="status" class="muted"></p><p id="err" style="color:#a62d2d"></p></section>
-<section class="card"><h2>Economics assumptions</h2><p class="muted">Enter known workload figures; decimal commas (for example 0,05) are supported. When figures are estimated, treat them as assumptions and verify them before relying on the savings forecast. Human review rate is separate from AI error rate.</p><div class="grid"><label class="kpi"><small>Tasks / month</small><input id="tasks" type="number" min="1" step="1" value="2400"></label><label class="kpi"><small>Minutes / task</small><input id="mins" type="number" min="0.1" step="0.1" value="6"></label><label class="kpi"><small>Labor $ / hour</small><input id="labor" type="number" min="0" step="1" value="30"></label><label class="kpi"><small>AI $ / task</small><input id="ai" type="number" min="0" step="0.001" value="0.05"></label><label class="kpi"><small>Human review min / reviewed task</small><input id="review" type="number" min="0" step="0.1" value="3"></label><label class="kpi"><small>Human review rate %</small><input id="reviewRate" type="number" min="0" max="100" step="1" value="100"></label><label class="kpi"><small>AI error rate %</small><input id="error" type="number" min="0" max="100" step="0.1" value="3"></label><label class="kpi"><small>Implementation cost $</small><input id="setup" type="number" min="0" step="50" value="500"></label></div></section>
+<section class="card"><h2>Economics assumptions</h2><p class="muted">AutoWorth extracts these values from your workflow description. Values marked ESTIMATED are assumptions, not confirmed facts. Review or edit them before relying on the savings forecast.</p><div id="econSource" class="muted" style="margin:0 0 12px;padding:10px 12px;border-radius:10px;background:#f2f6ff">The eight values will be populated after analysis.</div><div class="grid"><label class="kpi"><small>Tasks / month</small><input id="tasks" type="number" min="1" step="1" value="" placeholder="Auto-filled after analysis"></label><label class="kpi"><small>Minutes / task</small><input id="mins" type="number" min="0.1" step="0.1" value="" placeholder="Auto-filled after analysis"></label><label class="kpi"><small>Labor $ / hour</small><input id="labor" type="number" min="0" step="1" value="" placeholder="Auto-filled after analysis"></label><label class="kpi"><small>AI $ / task</small><input id="ai" type="number" min="0" step="0.001" value="" placeholder="Auto-filled after analysis"></label><label class="kpi"><small>Human review min / reviewed task</small><input id="review" type="number" min="0" step="0.1" value="" placeholder="Auto-filled after analysis"></label><label class="kpi"><small>Human review rate %</small><input id="reviewRate" type="number" min="0" max="100" step="1" value="" placeholder="Auto-filled after analysis"></label><label class="kpi"><small>AI error rate %</small><input id="error" type="number" min="0" max="100" step="0.1" value="" placeholder="Auto-filled after analysis"></label><label class="kpi"><small>Implementation cost $</small><input id="setup" type="number" min="0" step="50" value="" placeholder="Auto-filled after analysis"></label></div></section>
 
 <section id="paywall" class="card hidden">
 <div class="top"><div><div class="ey">FULL REPORT</div><h2>Turn this analysis into a saved report</h2><p>Free analysis gives you the decision. Full Report unlocks saved reports and the complete economics/blueprint workflow.</p></div><div style="text-align:right"><div style="font-size:34px;font-weight:950">$29</div><div class="muted">one-time</div></div></div>
@@ -45,8 +45,8 @@ function awPurchase(value){if(typeof window.gtag==="function" && window.AW_TRACK
 <div id="modal" class="modal hidden"><div><div class="brand"><span class="brandmark">A</span> AutoWorth</div><h2 id="mtitle" style="margin-top:20px">Welcome. Let’s make work work better.</h2><div id="authWelcome" class="welcome">Create your free account to keep your analysis and build a smarter operation over time.</div><form id="authForm" onsubmit="event.preventDefault();submitAuth()"><label id="emailLabel" class="muted">Work email</label><input id="email" name="email" placeholder="you@company.com" type="email" autocomplete="email" required><div id="passwordWrap" style="margin-top:13px"><label id="passwordLabel" class="muted">Password</label><input id="password" name="password" placeholder="At least 10 characters" type="password" autocomplete="new-password" minlength="10" required></div><div id="resetConfirmWrap" class="hidden" style="margin-top:13px"><label class="muted">Confirm new password</label><input id="passwordConfirm" type="password" autocomplete="new-password" minlength="10"></div><div class="actions"><button id="authSubmit" type="submit">Create my account</button><button class="alt" type="button" onclick="closeAuth()">Cancel</button></div></form><div id="authLinks" style="margin-top:15px;font-size:13px"><button class="authlink" onclick="openAuth('login')">Already have an account? Sign in</button></div><p id="merr" role="status" aria-live="polite" style="color:#a62d2d"></p></div></div>
 <script>
 const $=x=>document.getElementById(x),money=n=>new Intl.NumberFormat('en-US',{style:'currency',currency:'USD',maximumFractionDigits:0}).format(n);let analysis=null,econ=null,authMode='login',user=null,econAvailable=false,econInputsTouched=false,econTasksTouched=false,econMinsTouched=false;
-const ECON_DEFAULTS={tasks:2400,mins:6,labor:30,ai:0.05,review:3,reviewRate:100,error:3,setup:500};
-function resetEconomics(){for(const [id,val] of Object.entries(ECON_DEFAULTS)) $(id).value=val;econ=null;econAvailable=false;econInputsTouched=false;econTasksTouched=false;econMinsTouched=false;clearEconomicsDisplay()}
+const ECON_DEFAULTS={tasks:'',mins:'',labor:'',ai:'',review:'',reviewRate:'',error:'',setup:''};
+function resetEconomics(){for(const [id,val] of Object.entries(ECON_DEFAULTS)) $(id).value=val;econ=null;econAvailable=false;econInputsTouched=false;econTasksTouched=false;econMinsTouched=false;$('econSource').textContent='The eight values will be populated after analysis.';clearEconomicsDisplay()}
 function clearEconomicsDisplay(){['cur','aut','save','pay'].forEach(id=>$(id).textContent='—');$('stress').innerHTML=[1,3,5,10].map(e=>`<tr><td>${e}%</td><td>—</td><td>—</td><td>Need workload data</td></tr>`).join('')}
 const demoText="Every morning an employee checks 80 customer emails, copies order details into our CRM, categorizes each request, answers simple questions and creates follow-up tasks. Refund disputes and angry customers are escalated to a manager.";
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
@@ -82,6 +82,18 @@ function applyEconomicsSnapshot(q){
   if(q.reviewRate===undefined && Number.isFinite(Number(q.errorRate))) $('reviewRate').value=Number(q.errorRate)*100;
   econAvailable=Number(q.tasks)>0&&Number(q.mins)>0;econInputsTouched=econAvailable;econTasksTouched=econAvailable;econMinsTouched=econAvailable;
 }
+function applyExtractedEconomics(a){
+ const q=a&&a.economics;if(!q)return false;
+ const map={tasks:'tasks',minutes_per_task:'mins',labor_usd_hour:'labor',ai_usd_task:'ai',human_review_minutes:'review',human_review_rate_pct:'reviewRate',ai_error_rate_pct:'error',implementation_cost_usd:'setup'};
+ const basis=q.fields_basis||{};const labels={tasks:'Tasks/month',minutes_per_task:'Minutes/task',labor_usd_hour:'Labor/hour',ai_usd_task:'AI cost/task',human_review_minutes:'Review minutes',human_review_rate_pct:'Human review rate',ai_error_rate_pct:'AI error rate',implementation_cost_usd:'Implementation cost'};
+ const estimated=[];const explicit=[];
+ for(const [key,id] of Object.entries(map)){const v=Number(q[key]);if(Number.isFinite(v)&&v>=0){$(id).value=String(v);(basis[key]==='explicit'?explicit:estimated).push(labels[key]);}}
+ econTasksTouched=Number.isFinite(readNum('tasks'))&&readNum('tasks')>0;econMinsTouched=Number.isFinite(readNum('mins'))&&readNum('mins')>0;econInputsTouched=true;
+ econAvailable=econTasksTouched&&econMinsTouched;
+ const notes=Array.isArray(q.notes)?q.notes:[];
+ $('econSource').innerHTML=`<b>Extracted automatically:</b> ${explicit.length} explicit · ${estimated.length} estimated. ${estimated.length?'<br><b>Estimated fields:</b> '+estimated.map(esc).join(', '):''}${notes.length?'<br>'+notes.map(esc).join(' · '):''}`;
+ return econAvailable;
+}
 function calculate(){
   if(!analysis)return;
   const base=analysis.steps.length?analysis.steps.reduce((s,z)=>s+Math.max(0,Math.min(100,+z.automation_potential||0)),0)/analysis.steps.length:0;
@@ -112,37 +124,15 @@ function calculate(){
 }
 async function run(){
   let w=$('w').value.trim();
-  // Keep values the user has entered. Only infer workload values from the
-  // workflow description when the corresponding field has not been edited.
-  const userEditedAnyEconomics=econInputsTouched;
-  const tasksWasEdited=econTasksTouched;
-  const minsWasEdited=econMinsTouched;
-  const hadValidEconomics=econAvailable;
-  const num='([0-9]{1,3}(?:,[0-9]{3})+|[0-9]{2,})';
-  const qualifier='(?:about\s+|approximately\s+|around\s+|roughly\s+|~\s*)?';
-  const item='(?:(?:customer|emailed|incoming|vendor|supplier)\s+|customer-?\s*)*(?:emails?|applications?|requests?|tickets?|orders?|cases?|transactions?|invoices?|leads?)';
-  const monthlyMatch=w.match(new RegExp(qualifier+num+'\s+'+item+'(?:\s+(?:per|each)\s+(?:month|monthly)|\s+monthly)','i'));
-  const dailyMatch=w.match(new RegExp(qualifier+num+'\s+'+item+'(?:\s+(?:per|each)\s+(?:day|daily)|\s+daily)?','i'));
-  let dailyVolume=0,parsedTasks=false,parsedMins=false;
-  // An explicit volume in the current workflow text takes precedence over
-  // any value left in the form from a previous test or analysis.
-  if(monthlyMatch){const v=Number(monthlyMatch[1].replace(/,/g,''));if(v>0&&v<10000000){$('tasks').value=v;parsedTasks=true;}}
-  else if(dailyMatch){dailyVolume=Number(dailyMatch[1].replace(/,/g,''));if(dailyVolume>0&&dailyVolume<10000000){$('tasks').value=Math.round(dailyVolume*22);parsedTasks=true;}}
-  const timeMatch=w.match(/([0-9]+(?:\.[0-9]+)?)\s*(?:minutes?|mins?)\s+(?:per|each)\s+(?:application|request|ticket|email|case|task|invoice)/i);
-  if(!minsWasEdited&&timeMatch){$('mins').value=timeMatch[1];parsedMins=true;}
-  const dailyHoursMatch=w.match(/(?:about\s+|approximately\s+|around\s+|roughly\s+|~\s*)?([0-9]+(?:\.[0-9]+)?)\s*hours?\s*(?:per\s+day|each\s+day|daily)/i);
-  if(!minsWasEdited&&dailyHoursMatch&&dailyVolume>0){$('mins').value=((Number(dailyHoursMatch[1])*60)/dailyVolume).toFixed(2);parsedMins=true;}
-  // Economics are ready only when both workload dimensions are known:
-  // explicitly supplied by the user, inferred from text, or retained from
-  // a previously valid calculation of this same page session.
-  econAvailable=(tasksWasEdited||parsedTasks)&&(minsWasEdited||parsedMins)||hadValidEconomics;
+  // Each analysis starts from a clean slate so no figures leak from a previous workflow.
+  resetEconomics();
   $('err').textContent='';
   if(w.length<20){$('err').textContent='Írj le egy valódi folyamatot néhány mondatban.';return}
   $('status').textContent='AI elemzés…';$('go').disabled=true;
   try{
     let r=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({workflow:w})}),d=await r.json();
     if(!r.ok)throw Error(d.error||'Hiba');
-    analysis=d.analysis;window.latestReportId=null;$('openedReportBanner').classList.add('hidden');awEvent('workflow_analysis_completed');renderAnalysisView();calculate();
+    analysis=d.analysis;window.latestReportId=null;$('openedReportBanner').classList.add('hidden');awEvent('workflow_analysis_completed');renderAnalysisView();const economicsExtracted=applyExtractedEconomics(analysis);calculate();if(!economicsExtracted){$('econSource').textContent='AutoWorth could not extract enough workload data. Please enter the missing values manually.';}
     $('status').textContent=d.source==='openai'?'Valódi AI elemzés kész.':'Fallback mód.';
   }catch(e){$('err').textContent=e.message;$('status').textContent=''}
   finally{$('go').disabled=false}
@@ -262,6 +252,7 @@ async function boot(){
  await handlePaymentReturn();
 }
 ['tasks','mins','labor','ai','review','reviewRate','error','setup'].forEach(id=>$(id).addEventListener('input',()=>{econInputsTouched=true;if(id==='tasks')econTasksTouched=true;if(id==='mins')econMinsTouched=true;econAvailable=econTasksTouched&&econMinsTouched||econAvailable;calculate()}));
-$('go').onclick=run;$('demo').onclick=()=>{$('w').value=demoText;resetEconomics();econAvailable=true;econInputsTouched=true;econTasksTouched=true;econMinsTouched=true;$('tasks').value=2400;$('mins').value=6;$('labor').value=30;$('ai').value=0.05;$('review').value=3;$('reviewRate').value=100;$('error').value=3;$('setup').value=500;run()};boot();
+for(const id of ['tasks','mins','labor','ai','review','reviewRate','error','setup'])$(id).addEventListener('input',()=>{econInputsTouched=true;if(id==='tasks')econTasksTouched=true;if(id==='mins')econMinsTouched=true});
+$('go').onclick=run;$('demo').onclick=()=>{$('w').value=demoText;resetEconomics();run()};boot();
 </script><section class="card" style="margin-top:28px"><div class="muted">WHAT YOU GET</div><div class="two"><div><h3>Automation Economics</h3><p>Transparent assumptions, risk-adjusted savings, payback and error-rate stress testing.</p></div><div><h3>Implementation Blueprint</h3><p>Workflow architecture, step-level decisions and a practical pilot plan.</p></div></div></section>
 </body></html>
