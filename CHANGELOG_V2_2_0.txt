@@ -1,0 +1,11 @@
+AutoWorth V2.2.0 — Report experience improvements
+
+- Redesigned PDF export with a branded cover header, prominent executive decision, clearer economics summary, improved section hierarchy and readable typography.
+- Added automatic multi-page layout with running headers and page numbers so long workflow steps and build plans are not cut off.
+- Added owner-scoped report rename API and Rename action in Saved Reports.
+- Added input validation (1–80 characters), safe title encoding, success feedback and confirmation before deletion.
+- Preserved existing report IDs, saved data, payment-session mapping, Stripe Sandbox checkout and access recovery.
+
+Validation
+- Node syntax check passed for server.js and both inline browser scripts.
+- Full live runtime/browser and PDF visual QA still required after deployment.
