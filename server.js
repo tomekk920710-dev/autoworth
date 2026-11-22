@@ -323,7 +323,7 @@ app.get("/api/reports/:id/pdf",auth,(req,res)=>{
   };
   const paragraph=(value,opts={})=>{const textValue=safe(value);doc.font(opts.bold?"Helvetica-Bold":"Helvetica").fontSize(opts.size||9.6).fillColor(opts.color||ink).text(textValue,{width:contentW,lineGap:opts.lineGap??3,paragraphGap:opts.paragraphGap??4});};
   const heading=(label)=>{ensure(72);doc.moveDown(.35);doc.font("Helvetica-Bold").fontSize(13).fillColor(ink).text(label,{width:contentW});doc.moveDown(.22);const y=doc.y;doc.moveTo(left,y).lineTo(right,y).strokeColor(line).lineWidth(.8).stroke();doc.moveDown(.55);};
-  const bullet=(value)=>{ensure(28);const y=doc.y;doc.circle(left+4,y+5,2).fill(blue);doc.font("Helvetica").fontSize(9.3).fillColor(ink).text(safe(value),left+14,y-1,{width:contentW-14,lineGap:2,paragraphGap:3});};
+  const bullet=(value)=>{ensure(28);const y=doc.y;const formatted=safe(value).replace(/\\$(\\d{4,})(?![\\d,])/g,(_,digits)=>`$${Number(digits).toLocaleString("en-US")}`);doc.circle(left+4,y+5,2).fill(blue);doc.font("Helvetica").fontSize(9.3).fillColor(ink).text(formatted,left+14,y-1,{width:contentW-14,lineGap:2,paragraphGap:3});};
   const labelValue=(label,value)=>{ensure(20);doc.font("Helvetica-Bold").fontSize(8.2).fillColor(muted).text(String(label).toUpperCase(),left,doc.y,{width:260,continued:true});doc.font("Helvetica-Bold").fontSize(9.2).fillColor(ink).text(`  ${safe(String(value))}`,{width:contentW-260});};
   const card=(x,y,w,h,label,value,accent=blue)=>{doc.roundedRect(x,y,w,h,9).fill(pale);doc.roundedRect(x,y,4,h,2).fill(accent);doc.font("Helvetica-Bold").fontSize(7.5).fillColor(muted).text(label.toUpperCase(),x+13,y+11,{width:w-24});doc.font("Helvetica-Bold").fontSize(16).fillColor(ink).text(String(value),x+13,y+27,{width:w-24});};
 
@@ -336,7 +336,7 @@ app.get("/api/reports/:id/pdf",auth,(req,res)=>{
   doc.moveDown(.25);
   doc.font("Helvetica").fontSize(8.5).fillColor(muted).text(`Prepared ${new Date(r.created_at).toLocaleString("en-US",{dateStyle:"medium",timeStyle:"short"})}  •  Report #${r.id}`);
   doc.moveDown(1.0);
-  const score=numeric(e.score)?Number(e.score):null,mode=safe(e.mode,"NOT AVAILABLE");
+  const score=numeric(e.score)?Number(e.score):null,mode=safe(e.mode,"NOT AVAILABLE").replace(/_/g," ");
   const decisionY=doc.y;
   doc.roundedRect(left,decisionY,contentW,92,11).fill("#edf2ff");
   doc.font("Helvetica-Bold").fontSize(8).fillColor(blue).text("EXECUTIVE DECISION",left+16,decisionY+13);
@@ -377,7 +377,7 @@ app.get("/api/reports/:id/pdf",auth,(req,res)=>{
     }
   }
   if(numeric(e.errorRate))labelValue("Assumed AI error rate",pct(e.errorRate));
-  if(numeric(e.reviewRate))labelValue("Human review rate",pct(e.reviewRate));
+  if(numeric(e.reviewRate))labelValue("Human review coverage",pct(e.reviewRate));
   if(numeric(e.setup))labelValue("One-time implementation cost",money(e.setup));
   if(numeric(e.tasks))labelValue("Monthly task volume",Number(e.tasks).toLocaleString("en-US"));
   if(numeric(e.mins))labelValue("Current handling time per task",`${Number(e.mins).toFixed(1)} minutes`);
@@ -390,7 +390,7 @@ app.get("/api/reports/:id/pdf",auth,(req,res)=>{
   steps.forEach((step,i)=>{
     ensure(76);
     doc.font("Helvetica-Bold").fontSize(10).fillColor(ink).text(`${i+1}. ${safe(step.name,"Workflow step")}`,{width:contentW});
-    doc.font("Helvetica-Bold").fontSize(8.2).fillColor(blue).text(`${safe(step.recommended_mode,"REVIEW")}  •  ${safe(step.risk,"Unknown")} risk`,{width:contentW});
+    doc.font("Helvetica-Bold").fontSize(8.2).fillColor(blue).text(`${safe(step.recommended_mode,"REVIEW").replace(/_/g," ")}  •  ${safe(step.risk,"Unknown")} risk`,{width:contentW});
     if(step.description)paragraph(step.description,{size:8.8,color:muted});
     const potential=numeric(step.automation_potential)?`${Math.round(Number(step.automation_potential))}%`:"—";
     paragraph(`Automation potential: ${potential}. ${safe(step.rationale)}`,{size:8.8});
@@ -417,10 +417,15 @@ app.get("/api/reports/:id/pdf",auth,(req,res)=>{
   for(let i=range.start;i<range.start+range.count;i++){
     doc.switchToPage(i);
     if(i>0){doc.save();doc.font("Helvetica-Bold").fontSize(8).fillColor(blue).text("AUTOWORTH",left,27);doc.font("Helvetica").fontSize(8).fillColor(muted).text("FULL AUTOMATION ECONOMICS REPORT",right-190,27,{width:190,align:"right"});doc.moveTo(left,42).lineTo(right,42).strokeColor(line).lineWidth(.7).stroke();doc.restore();}
-    doc.save();doc.moveTo(left,780).lineTo(right,780).strokeColor(line).lineWidth(.7).stroke();doc.font("Helvetica").fontSize(7.8).fillColor(muted).text("AutoWorth  •  Confidential business workflow analysis",left,790,{width:330});doc.text(`Page ${i+1} of ${range.count}`,right-95,790,{width:95,align:"right"});doc.restore();
+    // Footer sits below the normal content margin. Temporarily relax PDFKit's
+    // bottom margin while drawing it; otherwise text() auto-creates extra pages.
+    const previousBottomMargin=doc.page.margins.bottom;
+    doc.page.margins.bottom=24;
+    doc.save();doc.moveTo(left,780).lineTo(right,780).strokeColor(line).lineWidth(.7).stroke();doc.font("Helvetica").fontSize(7.8).fillColor(muted).text("AutoWorth  •  Confidential business workflow analysis",left,790,{width:330,lineBreak:false});doc.text(`Page ${i+1} of ${range.count}`,right-95,790,{width:95,align:"right",lineBreak:false});doc.restore();
+    doc.page.margins.bottom=previousBottomMargin;
   }
   doc.end();
 });
 app.delete("/api/reports/:id",auth,(req,res)=>{q.deleteReport.run(Number(req.params.id),req.user.id);res.json({ok:true})});
 app.get("/{*splat}",(req,res)=>res.sendFile(path.join(__dirname,"index.html")));
-app.listen(PORT,()=>console.log("AutoWorth V2.2.0 on http://localhost:"+PORT));
+app.listen(PORT,()=>console.log("AutoWorth V2.3.2 on http://localhost:"+PORT));

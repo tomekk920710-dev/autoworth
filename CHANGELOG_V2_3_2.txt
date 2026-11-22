@@ -1,0 +1,11 @@
+AutoWorth V2.3.2 — PDF footer, pagination and report clarity fix
+
+- Fixed PDFKit footer rendering: the footer text was below the configured bottom margin, causing PDFKit to append extra pages during the final header/footer pass.
+- Footer drawing now temporarily relaxes the bottom margin and disables line wrapping, then restores the original page margin.
+- Kept footer numbering tied to the real report page range.
+- Renamed the displayed metric to “Human review coverage” for clearer interpretation of the 75% assumption.
+- Render decision labels with spaces instead of internal underscores (for example, KEEP HUMAN).
+- Added thousands separators to ungrouped dollar amounts in report bullet text.
+- Updated package and startup version to 2.3.2.
+
+Validation: JavaScript syntax checks performed. A deployed Render end-to-end PDF test is still required.
