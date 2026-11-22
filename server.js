@@ -42,6 +42,7 @@ setInterval(()=>{const cutoff=Date.now()-3600000;for(const [k,v] of rateBuckets)
 app.get("/",(req,res)=>res.sendFile(path.join(__dirname,"index.html")));
 
 const db=new Database(process.env.DB_PATH||path.join(__dirname,"autoworth.db"));
+console.log("[DB] SQLite database opened:", db.name, "| DB_PATH configured:", Boolean(process.env.DB_PATH));
 db.pragma("journal_mode = WAL");
 db.exec(`CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT,email TEXT UNIQUE NOT NULL,password_hash TEXT NOT NULL,plan TEXT DEFAULT "free",report_credits INTEGER DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,title TEXT NOT NULL,workflow TEXT NOT NULL,analysis_json TEXT NOT NULL,economics_json TEXT NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(user_id) REFERENCES users(id));
@@ -97,9 +98,18 @@ function fallback(t){let s=[];const rules=[[/email|request|form|message|ticket/,
 
 app.get("/api/health",(req,res)=>res.json({ok:true,ai_enabled:Boolean(process.env.OPENAI_API_KEY),email_enabled:Boolean(process.env.RESEND_API_KEY&&process.env.EMAIL_FROM),db:true,model:MODEL}));
 async function sendAuthEmail(to,subject,html){
-  if(!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) throw new Error("EMAIL_NOT_CONFIGURED");
+  if(!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) {
+    console.error("[AUTH_EMAIL] Not configured: RESEND_API_KEY or EMAIL_FROM is missing.");
+    throw new Error("EMAIL_NOT_CONFIGURED");
+  }
+  console.log("[AUTH_EMAIL] Sending:", subject);
   const response=await fetch("https://api.resend.com/emails",{method:"POST",headers:{Authorization:`Bearer ${process.env.RESEND_API_KEY}`,"Content-Type":"application/json"},body:JSON.stringify({from:process.env.EMAIL_FROM,to:[to],subject,html})});
-  if(!response.ok){const body=await response.text();console.error("Email provider error:",body);throw new Error("EMAIL_SEND_FAILED");}
+  const body=await response.text();
+  if(!response.ok){console.error("[AUTH_EMAIL] Resend rejected request. HTTP",response.status,body);throw new Error("EMAIL_SEND_FAILED");}
+  let result={};
+  try{result=JSON.parse(body)}catch{}
+  console.log("[AUTH_EMAIL] Resend accepted message. id:", result.id || "not-returned");
+  return result;
 }
 function issueAuthToken(userId,kind,ttlSeconds){const raw=randomBytes(32).toString("hex"),hash=createHash("sha256").update(raw).digest("hex");q.insertAuthToken.run(userId,hash,kind,Math.floor(Date.now()/1000)+ttlSeconds);return raw;}
 function appOrigin(req){return String(process.env.PUBLIC_APP_URL||`${req.protocol}://${req.get("host")}`).replace(/\/$/,"");}
@@ -113,9 +123,32 @@ app.post("/api/auth/register",rateLimit({windowMs:900000,max:10,keyPrefix:"regis
  }catch(e){if(String(e).includes("UNIQUE"))return res.status(409).json({error:"An account with this email already exists. Try signing in instead."});console.error(e);res.status(500).json({error:"Registration failed."})}});
 app.post("/api/auth/verify",rateLimit({windowMs:900000,max:20,keyPrefix:"verify"}),(req,res)=>{const raw=String(req.body.token||""),hash=createHash("sha256").update(raw).digest("hex"),row=q.authToken.get(hash,"verify",Math.floor(Date.now()/1000));if(!row)return res.status(400).json({error:"This verification link is invalid or has expired. Request a new one."});db.transaction(()=>{q.consumeAuthToken.run(Math.floor(Date.now()/1000),row.id);q.verifyUser.run(row.user_id)})();const u=q.userById.get(row.user_id);res.cookie("autoworth_token",token(u),{httpOnly:true,sameSite:"lax",secure:process.env.NODE_ENV==="production",maxAge:604800000});res.json({user:u,message:"Email verified. Welcome to AutoWorth."})});
 app.post("/api/auth/resend-verification",rateLimit({windowMs:900000,max:5,keyPrefix:"resendverify"}),async(req,res)=>{const email=String(req.body.email||"").trim().toLowerCase(),u=q.userByEmail.get(email);if(u&&!u.email_verified_at){const raw=issueAuthToken(u.id,"verify",86400),link=`${appOrigin(req)}/?verify=${encodeURIComponent(raw)}`;try{await sendAuthEmail(email,"Your AutoWorth verification link",`<p>Confirm your email:</p><p><a href="${link}">Verify email address</a></p><p>This link expires in 24 hours.</p>`)}catch(e){return res.status(503).json({error:"We could not send the email. Please try again later."})}}res.json({message:"If this address has an unverified account, a new verification email has been sent."})});
-app.post("/api/auth/forgot-password",rateLimit({windowMs:900000,max:5,keyPrefix:"forgot"}),async(req,res)=>{const email=String(req.body.email||"").trim().toLowerCase(),u=q.userByEmail.get(email);if(u){const raw=issueAuthToken(u.id,"reset",3600),link=`${appOrigin(req)}/?reset=${encodeURIComponent(raw)}`;try{await sendAuthEmail(email,"Reset your AutoWorth password",`<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto"><h1>Password reset</h1><p>We received a request to reset your AutoWorth password.</p><p><a href="${link}">Choose a new password</a></p><p>This one-time link expires in one hour. If you did not request this, ignore this email.</p></div>`)}catch(e){return res.status(503).json({error:"Password reset email could not be sent. Please try again later."})}}res.json({message:"If an account exists for that email, a password reset link has been sent."})});
-app.post("/api/auth/reset-password",rateLimit({windowMs:900000,max:10,keyPrefix:"reset"}),async(req,res)=>{const raw=String(req.body.token||""),pw=String(req.body.password||"");if(pw.length<10)return res.status(400).json({error:"Use a password with at least 10 characters."});const hash=createHash("sha256").update(raw).digest("hex"),row=q.authToken.get(hash,"reset",Math.floor(Date.now()/1000));if(!row)return res.status(400).json({error:"This reset link is invalid, expired or already used."});const pwHash=await bcrypt.hash(pw,12);db.transaction(()=>{q.updatePassword.run(pwHash,row.user_id);q.consumeAuthToken.run(Math.floor(Date.now()/1000),row.id)})();res.clearCookie("autoworth_token");res.json({message:"Password updated. You can now sign in with your new password."})});
-app.post("/api/auth/login",rateLimit({windowMs:900000,max:15,keyPrefix:"login"}),async(req,res)=>{const email=String(req.body.email||"").trim().toLowerCase(),pw=String(req.body.password||""),u=q.userByEmail.get(email);if(!u||!(await bcrypt.compare(pw,u.password_hash)))return res.status(401).json({error:"Invalid email or password."});if(!u.email_verified_at)return res.status(403).json({error:"Please verify your email before signing in. You can request a new verification email."});res.cookie("autoworth_token",token(u),{httpOnly:true,sameSite:"lax",secure:process.env.NODE_ENV==="production",maxAge:604800000});res.json({user:{id:u.id,email:u.email}})});
+app.post("/api/auth/forgot-password",rateLimit({windowMs:900000,max:5,keyPrefix:"forgot"}),async(req,res)=>{
+ const email=String(req.body.email||"").trim().toLowerCase();
+ const u=q.userByEmail.get(email);
+ console.log("[AUTH_FORGOT] Account lookup:", u ? "FOUND" : "NOT_FOUND");
+ if(u){
+  const raw=issueAuthToken(u.id,"reset",3600),link=`${appOrigin(req)}/?reset=${encodeURIComponent(raw)}`;
+  try{
+   await sendAuthEmail(email,"Reset your AutoWorth password",`<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto"><h1>Password reset</h1><p>We received a request to reset your AutoWorth password.</p><p><a href="${link}">Choose a new password</a></p><p>This one-time link expires in one hour. If you did not request this, ignore this email.</p></div>`);
+  }catch(e){
+   console.error("[AUTH_FORGOT] Email delivery failed:",e.message);
+   return res.status(503).json({error:"Password reset email could not be sent. Please try again later."});
+  }
+ }
+ res.json({message:"If an account exists for that email, a password reset link has been sent."});
+});
+app.post("/api/auth/reset-password",rateLimit({windowMs:900000,max:10,keyPrefix:"reset"}),async(req,res)=>{const raw=String(req.body.token||""),pw=String(req.body.password||"");if(pw.length<10)return res.status(400).json({error:"Use a password with at least 10 characters."});const hash=createHash("sha256").update(raw).digest("hex"),row=q.authToken.get(hash,"reset",Math.floor(Date.now()/1000));if(!row)return res.status(400).json({error:"This reset link is invalid, expired or already used."});const pwHash=await bcrypt.hash(pw,12);db.transaction(()=>{q.updatePassword.run(pwHash,row.user_id);q.consumeAuthToken.run(Math.floor(Date.now()/1000),row.id);db.prepare("UPDATE auth_tokens SET used_at=? WHERE user_id=? AND kind='reset' AND used_at IS NULL").run(Math.floor(Date.now()/1000),row.user_id)})();res.clearCookie("autoworth_token");res.json({message:"Password updated. You can now sign in with your new password."})});
+app.post("/api/auth/login",rateLimit({windowMs:900000,max:15,keyPrefix:"login"}),async(req,res)=>{
+ const email=String(req.body.email||"").trim().toLowerCase(),pw=String(req.body.password||""),u=q.userByEmail.get(email);
+ if(!u){console.warn("[AUTH_LOGIN] Account lookup: NOT_FOUND");return res.status(401).json({error:"Invalid email or password."});}
+ const passwordMatches=await bcrypt.compare(pw,u.password_hash);
+ console.log("[AUTH_LOGIN] Account lookup: FOUND | Password match:",passwordMatches,"| Email verified:",Boolean(u.email_verified_at));
+ if(!passwordMatches)return res.status(401).json({error:"Invalid email or password."});
+ if(!u.email_verified_at)return res.status(403).json({error:"Please verify your email before signing in. You can request a new verification email."});
+ res.cookie("autoworth_token",token(u),{httpOnly:true,sameSite:"lax",secure:process.env.NODE_ENV==="production",maxAge:604800000});
+ res.json({user:{id:u.id,email:u.email}});
+});
 app.post("/api/auth/logout",(req,res)=>{res.clearCookie("autoworth_token");res.json({ok:true})});
 app.get("/api/auth/me",auth,(req,res)=>res.json({user:q.userById.get(req.user.id)}));
 function fulfillPaidSession(session){
