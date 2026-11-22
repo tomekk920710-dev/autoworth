@@ -1,0 +1,9 @@
+AutoWorth V2.3.1 — PDF pagination and consistency fix
+
+- Improved PDF page-break safety to prevent duplicate manual breaks after PDFKit automatic text wrapping.
+- Added larger preflight space for section headings and variable-height workflow/implementation blocks to reduce orphaned headings and awkward splits.
+- Fixed percentage formatting so both fractional values (0.75) and whole percentage values (75) render as 75.0%, not 7500.0%.
+- Kept the PDF download filename tied to the Saved Report title, including a UTF-8 filename for accented characters and a filesystem-safe fallback.
+- Corrected page footer numbering to be relative to the generated document's page range.
+
+Validation: Node syntax checks performed. A live Render/PDF end-to-end test is still required.

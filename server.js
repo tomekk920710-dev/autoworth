@@ -300,7 +300,8 @@ app.get("/api/reports/:id/pdf",auth,(req,res)=>{
   const safe=(v,fallback="Not provided")=>typeof v==="string"&&v.trim()?v.trim():fallback;
   const numeric=v=>v!==null&&v!==undefined&&v!==""&&Number.isFinite(Number(v));
   const money=v=>numeric(v)?`$${Number(v).toLocaleString("en-US",{minimumFractionDigits:0,maximumFractionDigits:0})}`:"—";
-  const pct=v=>numeric(v)?`${(Number(v)*100).toFixed(1)}%`:"—";
+  // Accept both normalized fractions (0.75) and already-percent values (75).
+  const pct=v=>numeric(v)?`${(Number(v)>1?Number(v):Number(v)*100).toFixed(1)}%`:"—";
   const cleanTitle=String(r.title||"AutoWorth Report").normalize("NFC").replace(/[\\/:*?\"<>|\x00-\x1F]/g," ").replace(/\s+/g," ").trim().replace(/[. ]+$/g,"").slice(0,90)||"AutoWorth Report";
   const fallbackName=cleanTitle.normalize("NFKD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-zA-Z0-9 _-]/g,"").trim().replace(/[ _]+/g,"-").replace(/-+/g,"-").slice(0,80)||`AutoWorth-Report-${r.id}`;
   const filename=`${fallbackName}.pdf`;
@@ -313,9 +314,15 @@ app.get("/api/reports/:id/pdf",auth,(req,res)=>{
   const ink="#17243b",muted="#64748b",blue="#315cf5",navy="#101b31",mint="#dff7ed",line="#e5eaf2",pale="#f3f6fc",green="#087f5b",amber="#a16207";
   const doc=new PDFDocument({size:"A4",margin:{top:66,bottom:78,left,right:52},bufferPages:true,compress:true,info:{Title:`AutoWorth — ${cleanTitle}`,Author:"AutoWorth",Subject:"Workflow automation economics and implementation report",Keywords:"workflow automation, ROI, business process"}});
   doc.pipe(res);
-  const ensure=(height=36)=>{if(doc.y+height>bottom)doc.addPage()};
+  // Keep content inside the printable area and avoid consecutive page breaks.
+  // PDFKit can also auto-break long text; the y>100 guard prevents a second
+  // manual break immediately after it has already moved to a fresh page.
+  const ensure=(height=36)=>{
+    const required=Math.max(24,Number(height)||36);
+    if(doc.y+required>bottom && doc.y>100) doc.addPage();
+  };
   const paragraph=(value,opts={})=>{const textValue=safe(value);doc.font(opts.bold?"Helvetica-Bold":"Helvetica").fontSize(opts.size||9.6).fillColor(opts.color||ink).text(textValue,{width:contentW,lineGap:opts.lineGap??3,paragraphGap:opts.paragraphGap??4});};
-  const heading=(label)=>{ensure(48);doc.moveDown(.35);doc.font("Helvetica-Bold").fontSize(13).fillColor(ink).text(label,{width:contentW});doc.moveDown(.22);const y=doc.y;doc.moveTo(left,y).lineTo(right,y).strokeColor(line).lineWidth(.8).stroke();doc.moveDown(.55);};
+  const heading=(label)=>{ensure(72);doc.moveDown(.35);doc.font("Helvetica-Bold").fontSize(13).fillColor(ink).text(label,{width:contentW});doc.moveDown(.22);const y=doc.y;doc.moveTo(left,y).lineTo(right,y).strokeColor(line).lineWidth(.8).stroke();doc.moveDown(.55);};
   const bullet=(value)=>{ensure(28);const y=doc.y;doc.circle(left+4,y+5,2).fill(blue);doc.font("Helvetica").fontSize(9.3).fillColor(ink).text(safe(value),left+14,y-1,{width:contentW-14,lineGap:2,paragraphGap:3});};
   const labelValue=(label,value)=>{ensure(20);doc.font("Helvetica-Bold").fontSize(8.2).fillColor(muted).text(String(label).toUpperCase(),left,doc.y,{width:260,continued:true});doc.font("Helvetica-Bold").fontSize(9.2).fillColor(ink).text(`  ${safe(String(value))}`,{width:contentW-260});};
   const card=(x,y,w,h,label,value,accent=blue)=>{doc.roundedRect(x,y,w,h,9).fill(pale);doc.roundedRect(x,y,4,h,2).fill(accent);doc.font("Helvetica-Bold").fontSize(7.5).fillColor(muted).text(label.toUpperCase(),x+13,y+11,{width:w-24});doc.font("Helvetica-Bold").fontSize(16).fillColor(ink).text(String(value),x+13,y+27,{width:w-24});};
@@ -391,7 +398,7 @@ app.get("/api/reports/:id/pdf",auth,(req,res)=>{
     doc.moveDown(.35);
   });
 
-  if(architecture.length){heading("Recommended architecture");architecture.forEach((item,i)=>{ensure(42);doc.font("Helvetica-Bold").fontSize(8).fillColor(blue).text(`STEP ${i+1}`);paragraph(item,{size:9.2});doc.moveDown(.2)});}
+  if(architecture.length){heading("Recommended architecture");architecture.forEach((item,i)=>{ensure(58);doc.font("Helvetica-Bold").fontSize(8).fillColor(blue).text(`STEP ${i+1}`);paragraph(item,{size:9.2});doc.moveDown(.2)});}
   if(plan.length){heading("Implementation build plan");plan.forEach((item,i)=>{
     ensure(60);
     doc.font("Helvetica-Bold").fontSize(9.5).fillColor(ink).text(`${i+1}. ${safe(item.action,"Implementation step")}`,{width:contentW});
