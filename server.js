@@ -373,7 +373,7 @@ app.get("/api/reports/:id/pdf",auth,(req,res)=>{
     doc.y=chartY+70;
     if(saving!==null){
       const preRisk=current-automation,adjustment=preRisk-saving;
-      doc.font("Helvetica").fontSize(8).fillColor(muted).text(`Monthly difference before risk adjustment: ${money(preRisk)}. Risk/quality adjustment: ${money(adjustment)}. Final risk-adjusted saving: ${money(saving)}.`,left,doc.y,{width:contentW});
+      doc.font("Helvetica").fontSize(8).fillColor(muted).text(`Gross monthly saving before risk adjustment: ${money(preRisk)}. Implied risk/quality adjustment: ${money(adjustment)} (the difference between gross and risk-adjusted savings; not a separately itemized cost estimate). Final risk-adjusted saving: ${money(saving)}.`,left,doc.y,{width:contentW});
     }
   }
   if(numeric(e.errorRate))labelValue("Assumed AI error rate",pct(e.errorRate));

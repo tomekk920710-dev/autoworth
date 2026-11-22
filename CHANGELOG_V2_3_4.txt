@@ -1,0 +1,5 @@
+AutoWorth V2.3.4 — PDF transparency polish
+
+- Clarifies that the risk/quality adjustment shown in the economics overview is an implied difference between gross and risk-adjusted monthly savings.
+- Explicitly states that this adjustment is not a separately itemized cost estimate, avoiding the impression that the report exposes a detailed risk-cost formula.
+- No changes to calculation logic, AI analysis, authentication, database, or Stripe behavior.
