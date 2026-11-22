@@ -323,7 +323,7 @@ app.get("/api/reports/:id/pdf",auth,(req,res)=>{
   };
   const paragraph=(value,opts={})=>{const textValue=safe(value);doc.font(opts.bold?"Helvetica-Bold":"Helvetica").fontSize(opts.size||9.6).fillColor(opts.color||ink).text(textValue,{width:contentW,lineGap:opts.lineGap??3,paragraphGap:opts.paragraphGap??4});};
   const heading=(label)=>{ensure(72);doc.moveDown(.35);doc.font("Helvetica-Bold").fontSize(13).fillColor(ink).text(label,{width:contentW});doc.moveDown(.22);const y=doc.y;doc.moveTo(left,y).lineTo(right,y).strokeColor(line).lineWidth(.8).stroke();doc.moveDown(.55);};
-  const bullet=(value)=>{ensure(28);const y=doc.y;const formatted=safe(value).replace(/\\$(\\d{4,})(?![\\d,])/g,(_,digits)=>`$${Number(digits).toLocaleString("en-US")}`);doc.circle(left+4,y+5,2).fill(blue);doc.font("Helvetica").fontSize(9.3).fillColor(ink).text(formatted,left+14,y-1,{width:contentW-14,lineGap:2,paragraphGap:3});};
+  const bullet=(value)=>{ensure(28);const y=doc.y;const formatted=safe(value).replace(/\$(\d{4,})(?![\d,])/g,(_,digits)=>`$${Number(digits).toLocaleString("en-US")}`);doc.circle(left+4,y+5,2).fill(blue);doc.font("Helvetica").fontSize(9.3).fillColor(ink).text(formatted,left+14,y-1,{width:contentW-14,lineGap:2,paragraphGap:3});};
   const labelValue=(label,value)=>{ensure(20);doc.font("Helvetica-Bold").fontSize(8.2).fillColor(muted).text(String(label).toUpperCase(),left,doc.y,{width:260,continued:true});doc.font("Helvetica-Bold").fontSize(9.2).fillColor(ink).text(`  ${safe(String(value))}`,{width:contentW-260});};
   const card=(x,y,w,h,label,value,accent=blue)=>{doc.roundedRect(x,y,w,h,9).fill(pale);doc.roundedRect(x,y,4,h,2).fill(accent);doc.font("Helvetica-Bold").fontSize(7.5).fillColor(muted).text(label.toUpperCase(),x+13,y+11,{width:w-24});doc.font("Helvetica-Bold").fontSize(16).fillColor(ink).text(String(value),x+13,y+27,{width:w-24});};
 
@@ -399,7 +399,10 @@ app.get("/api/reports/:id/pdf",auth,(req,res)=>{
   });
 
   if(architecture.length){heading("Recommended architecture");architecture.forEach((item,i)=>{ensure(58);doc.font("Helvetica-Bold").fontSize(8).fillColor(blue).text(`STEP ${i+1}`);paragraph(item,{size:9.2});doc.moveDown(.2)});}
-  if(plan.length){heading("Implementation build plan");plan.forEach((item,i)=>{
+  if(plan.length){
+    // Keep the implementation plan together as a section instead of leaving its heading and first item stranded at the end of the previous page.
+    if(doc.y>455) doc.addPage();
+    heading("Implementation build plan");plan.forEach((item,i)=>{
     ensure(60);
     doc.font("Helvetica-Bold").fontSize(9.5).fillColor(ink).text(`${i+1}. ${safe(item.action,"Implementation step")}`,{width:contentW});
     if(item.purpose)paragraph(`Purpose: ${item.purpose}`,{size:8.8});
@@ -428,4 +431,4 @@ app.get("/api/reports/:id/pdf",auth,(req,res)=>{
 });
 app.delete("/api/reports/:id",auth,(req,res)=>{q.deleteReport.run(Number(req.params.id),req.user.id);res.json({ok:true})});
 app.get("/{*splat}",(req,res)=>res.sendFile(path.join(__dirname,"index.html")));
-app.listen(PORT,()=>console.log("AutoWorth V2.3.2 on http://localhost:"+PORT));
+app.listen(PORT,()=>console.log("AutoWorth V2.3.3 on http://localhost:"+PORT));

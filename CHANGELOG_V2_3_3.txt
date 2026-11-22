@@ -1,0 +1,5 @@
+AutoWorth V2.3.3 – Report polish
+
+- Fixed thousands-separator formatting for dollar amounts in analysis assumption bullets (e.g. $12,000).
+- Keep the implementation build plan from starting at the bottom of the preceding page when space is insufficient.
+- No changes to authentication, economics calculations, database, or Stripe configuration.
