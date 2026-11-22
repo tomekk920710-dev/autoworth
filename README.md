@@ -26,3 +26,10 @@ npm run dev
 
 ## Deployment notes
 The included Render blueprint lists the required environment variables but does not provision persistent disk storage on the Free plan. Before accepting real customer accounts/payments, configure durable storage or migrate SQLite to a managed database. Never use Stripe Live keys until checkout, webhook fulfillment, report recovery, and refund/support flows have passed QA.
+
+
+## Render persistent SQLite storage (V2.0.2)
+
+This build keeps the existing SQLite application code and moves the database to `/var/data/autoworth.db` on a Render persistent disk. The Render service must use the Starter web-service plan and have a 1 GB persistent disk mounted at `/var/data`. The first boot copies the previous local `autoworth.db` into the persistent disk if the destination database does not exist. This is a one-time migration safeguard; it does not replace a separate backup strategy.
+
+Important: persistent disks are attached to one service instance and prevent horizontal scaling. This is an economical early-stage setup for the current single-instance application. For growth or multiple instances, migrate to managed PostgreSQL.

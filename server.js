@@ -7,6 +7,7 @@ import cookieParser from "cookie-parser";
 import Stripe from "stripe";
 import PDFDocument from "pdfkit";
 import path from "path";
+import {existsSync,mkdirSync} from "fs";
 import {fileURLToPath} from "url";
 import {randomBytes,createHash} from "crypto";
 
@@ -41,7 +42,19 @@ setInterval(()=>{const cutoff=Date.now()-3600000;for(const [k,v] of rateBuckets)
 
 app.get("/",(req,res)=>res.sendFile(path.join(__dirname,"index.html")));
 
-const db=new Database(process.env.DB_PATH||path.join(__dirname,"autoworth.db"));
+const configuredDbPath=process.env.DB_PATH||path.join(__dirname,"autoworth.db");
+const resolvedDbPath=path.resolve(configuredDbPath);
+mkdirSync(path.dirname(resolvedDbPath),{recursive:true});
+const legacyDbPath=path.join(__dirname,"autoworth.db");
+// One-time safe copy from the old ephemeral SQLite location to the persistent disk.
+// better-sqlite3's backup API also accounts for committed WAL data.
+if(resolvedDbPath!==path.resolve(legacyDbPath) && !existsSync(resolvedDbPath) && existsSync(legacyDbPath)){
+  const legacyDb=new Database(legacyDbPath);
+  await legacyDb.backup(resolvedDbPath);
+  legacyDb.close();
+  console.log("[DB] Existing SQLite data copied to persistent storage:",resolvedDbPath);
+}
+const db=new Database(resolvedDbPath);
 console.log("[DB] SQLite database opened:", db.name, "| DB_PATH configured:", Boolean(process.env.DB_PATH));
 db.pragma("journal_mode = WAL");
 db.exec(`CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT,email TEXT UNIQUE NOT NULL,password_hash TEXT NOT NULL,plan TEXT DEFAULT "free",report_credits INTEGER DEFAULT 1,created_at TEXT DEFAULT CURRENT_TIMESTAMP);

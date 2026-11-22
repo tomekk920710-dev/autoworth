@@ -1,0 +1,9 @@
+AutoWorth V2.0.2 — Persistent database storage
+
+- Moves SQLite database path to /var/data/autoworth.db.
+- Adds startup directory creation and one-time SQLite backup migration from the previous local database file when present.
+- Render blueprint now specifies Starter web service and a 1 GB persistent disk mounted at /var/data.
+- Keeps existing SQLite schema and application query code; no PostgreSQL rewrite is required for this storage fix.
+- Stripe configuration remains unchanged; continue using Stripe Test/Sandbox keys until end-to-end QA is complete.
+
+Deployment prerequisite: attach/confirm the Render persistent disk and ensure DB_PATH is /var/data/autoworth.db. Do not deploy the new path without a persistent disk mounted at /var/data.

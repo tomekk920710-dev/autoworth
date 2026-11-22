@@ -21,7 +21,7 @@ function awPurchase(value){if(typeof window.gtag==="function" && window.AW_TRACK
 <div class="kpi"><small>4</small><strong>Decide</strong><span class="muted">Build, buy or keep human</span></div>
 </section>
 <section class="card"><h2>Describe the workflow</h2><textarea id="w" placeholder="Example: Every morning an employee checks 80 customer emails, copies order details into our CRM, categorizes each request, answers simple questions and creates follow-up tasks. Refund disputes go to a manager."></textarea><div class="actions"><button id="go">Analyze + calculate</button><button class="alt" id="demo">Load demo</button></div><p id="status" class="muted"></p><p id="err" style="color:#a62d2d"></p></section>
-<section class="card"><h2>Economics assumptions</h2><p class="muted">Enter the real workload numbers when you know them. Each new analysis starts fresh so values from a previous workflow never carry over. If the current workflow contains no workload data, economics stay blank until you enter assumptions. Human review rate is separate from AI error rate; the default 100% is a conservative assumption.</p><div class="grid"><label class="kpi"><small>Tasks / month</small><input id="tasks" type="number" min="1" step="1" value="2400"></label><label class="kpi"><small>Minutes / task</small><input id="mins" type="number" min="0.1" step="0.1" value="6"></label><label class="kpi"><small>Labor $ / hour</small><input id="labor" type="number" min="0" step="1" value="30"></label><label class="kpi"><small>AI $ / task</small><input id="ai" type="number" min="0" step="0.001" value="0.05"></label><label class="kpi"><small>Human review min / reviewed task</small><input id="review" type="number" min="0" step="0.1" value="3"></label><label class="kpi"><small>Human review rate %</small><input id="reviewRate" type="number" min="0" max="100" step="1" value="100"></label><label class="kpi"><small>AI error rate %</small><input id="error" type="number" min="0" max="100" step="0.1" value="3"></label><label class="kpi"><small>Implementation cost $</small><input id="setup" type="number" min="0" step="50" value="500"></label></div></section>
+<section class="card"><h2>Economics assumptions</h2><p class="muted">Enter known workload figures; decimal commas (for example 0,05) are supported. When figures are estimated, treat them as assumptions and verify them before relying on the savings forecast. Human review rate is separate from AI error rate.</p><div class="grid"><label class="kpi"><small>Tasks / month</small><input id="tasks" type="number" min="1" step="1" value="2400"></label><label class="kpi"><small>Minutes / task</small><input id="mins" type="number" min="0.1" step="0.1" value="6"></label><label class="kpi"><small>Labor $ / hour</small><input id="labor" type="number" min="0" step="1" value="30"></label><label class="kpi"><small>AI $ / task</small><input id="ai" type="number" min="0" step="0.001" value="0.05"></label><label class="kpi"><small>Human review min / reviewed task</small><input id="review" type="number" min="0" step="0.1" value="3"></label><label class="kpi"><small>Human review rate %</small><input id="reviewRate" type="number" min="0" max="100" step="1" value="100"></label><label class="kpi"><small>AI error rate %</small><input id="error" type="number" min="0" max="100" step="0.1" value="3"></label><label class="kpi"><small>Implementation cost $</small><input id="setup" type="number" min="0" step="50" value="500"></label></div></section>
 
 <section id="paywall" class="card hidden">
 <div class="top"><div><div class="ey">FULL REPORT</div><h2>Turn this analysis into a saved report</h2><p>Free analysis gives you the decision. Full Report unlocks saved reports and the complete economics/blueprint workflow.</p></div><div style="text-align:right"><div style="font-size:34px;font-weight:950">$29</div><div class="muted">one-time</div></div></div>
@@ -51,7 +51,8 @@ function clearEconomicsDisplay(){['cur','aut','save','pay'].forEach(id=>$(id).te
 const demoText="Every morning an employee checks 80 customer emails, copies order details into our CRM, categorizes each request, answers simple questions and creates follow-up tasks. Refund disputes and angry customers are escalated to a manager.";
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 function pill(m){const x=String(m||'').toUpperCase();return `<span class="pill ${x==='AUTOMATE'?'g':x==='KEEP_HUMAN'?'r':'y'}">${esc(x)}</span>`}
-function calcAt(e){const n=id=>Number($(id)?.value);const t=Number.isFinite(n('tasks'))?Math.max(0,n('tasks')):0,m=Number.isFinite(n('mins'))?Math.max(0,n('mins')):0,l=Number.isFinite(n('labor'))?Math.max(0,n('labor')):0,a=Number.isFinite(n('ai'))?Math.max(0,n('ai')):0,r=Number.isFinite(n('review'))?Math.max(0,n('review')):0,rr=Number.isFinite(n('reviewRate'))?Math.min(100,Math.max(0,n('reviewRate')))/100:1;let cur=t*m/60*l,auto=t*a+t*rr*r/60*l,rework=t*e*l*.1;return{cur,auto,save:Math.max(0,cur-auto-rework)}}
+function readNum(id){const raw=String($(id)?.value??'').trim().replace(/\s/g,'').replace(',', '.');return raw===''?NaN:Number(raw)}
+function calcAt(e){const n=id=>readNum(id);const t=Number.isFinite(n('tasks'))?Math.max(0,n('tasks')):0,m=Number.isFinite(n('mins'))?Math.max(0,n('mins')):0,l=Number.isFinite(n('labor'))?Math.max(0,n('labor')):0,a=Number.isFinite(n('ai'))?Math.max(0,n('ai')):0,r=Number.isFinite(n('review'))?Math.max(0,n('review')):0,rr=Number.isFinite(n('reviewRate'))?Math.min(100,Math.max(0,n('reviewRate')))/100:1;let cur=t*m/60*l,auto=t*a+t*rr*r/60*l,rework=t*e*l*.1;return{cur,auto,save:Math.max(0,cur-auto-rework)}}
 function isCriticalHumanGate(s){
   const mode=String(s?.recommended_mode||'').toUpperCase();
   const text=`${s?.name||''} ${s?.description||''} ${s?.rationale||''}`.toLowerCase();
@@ -75,7 +76,7 @@ function applyEconomicsSnapshot(q){
   resetEconomics();
   if(!q||typeof q!=='object')return;
   for(const [key,id] of Object.entries({tasks:'tasks',mins:'mins',labor:'labor',ai:'ai',review:'review',reviewRate:'reviewRate',setup:'setup'})){
-    if(Number.isFinite(Number(q[key])) && q[key]!==null && q[key]!=='' ) $(id).value=Number(q[key]);
+    if(Number.isFinite(Number(String(q[key]).replace(',', '.'))) && q[key]!==null && q[key]!=='' ) $(id).value=Number(String(q[key]).replace(',', '.'));
   }
   if(Number.isFinite(Number(q.errorRate)) && q.errorRate!==null) $('error').value=Number(q.errorRate)*100;
   if(q.reviewRate===undefined && Number.isFinite(Number(q.errorRate))) $('reviewRate').value=Number(q.errorRate)*100;
@@ -86,8 +87,8 @@ function calculate(){
   const base=analysis.steps.length?analysis.steps.reduce((s,z)=>s+Math.max(0,Math.min(100,+z.automation_potential||0)),0)/analysis.steps.length:0;
   const hasCriticalKeepHuman=analysis.steps.some(isCriticalHumanGate);
   const hasHighRisk=analysis.steps.some(s=>String(s.risk||'').toLowerCase()==='high');
-  const tasks=+$('tasks').value, mins=+$('mins').value, labor=+$('labor').value, ai=+$('ai').value, review=+$('review').value, reviewRatePct=+$('reviewRate').value, errorPct=+$('error').value, setup=+$('setup').value;
-  const economicsReady=econAvailable && Number.isFinite(tasks)&&tasks>0 && Number.isFinite(mins)&&mins>0 && Number.isFinite(labor)&&labor>=0 && Number.isFinite(ai)&&ai>=0 && Number.isFinite(review)&&review>=0 && Number.isFinite(reviewRatePct)&&reviewRatePct>=0&&reviewRatePct<=100 && Number.isFinite(errorPct)&&errorPct>=0&&errorPct<=100;
+  const tasks=readNum('tasks'), mins=readNum('mins'), labor=readNum('labor'), ai=readNum('ai'), review=readNum('review'), reviewRatePct=readNum('reviewRate'), errorPct=readNum('error'), setup=readNum('setup');
+  const economicsReady=Number.isFinite(tasks)&&tasks>0 && Number.isFinite(mins)&&mins>0 && Number.isFinite(labor)&&labor>=0 && Number.isFinite(ai)&&ai>=0 && Number.isFinite(review)&&review>=0 && Number.isFinite(reviewRatePct)&&reviewRatePct>=0&&reviewRatePct<=100 && Number.isFinite(errorPct)&&errorPct>=0&&errorPct<=100;
   let score,mode;
   if(!economicsReady){
     score=Math.round(base);
@@ -123,10 +124,10 @@ async function run(){
   const monthlyMatch=w.match(new RegExp(qualifier+num+'\s+'+item+'(?:\s+(?:per|each)\s+(?:month|monthly)|\s+monthly)','i'));
   const dailyMatch=w.match(new RegExp(qualifier+num+'\s+'+item+'(?:\s+(?:per|each)\s+(?:day|daily)|\s+daily)?','i'));
   let dailyVolume=0,parsedTasks=false,parsedMins=false;
-  if(!tasksWasEdited){
-    if(monthlyMatch){const v=Number(monthlyMatch[1].replace(/,/g,''));if(v>0&&v<10000000){$('tasks').value=v;parsedTasks=true;}}
-    else if(dailyMatch){dailyVolume=Number(dailyMatch[1].replace(/,/g,''));if(dailyVolume>0&&dailyVolume<10000000){$('tasks').value=Math.round(dailyVolume*22);parsedTasks=true;}}
-  }
+  // An explicit volume in the current workflow text takes precedence over
+  // any value left in the form from a previous test or analysis.
+  if(monthlyMatch){const v=Number(monthlyMatch[1].replace(/,/g,''));if(v>0&&v<10000000){$('tasks').value=v;parsedTasks=true;}}
+  else if(dailyMatch){dailyVolume=Number(dailyMatch[1].replace(/,/g,''));if(dailyVolume>0&&dailyVolume<10000000){$('tasks').value=Math.round(dailyVolume*22);parsedTasks=true;}}
   const timeMatch=w.match(/([0-9]+(?:\.[0-9]+)?)\s*(?:minutes?|mins?)\s+(?:per|each)\s+(?:application|request|ticket|email|case|task|invoice)/i);
   if(!minsWasEdited&&timeMatch){$('mins').value=timeMatch[1];parsedMins=true;}
   const dailyHoursMatch=w.match(/(?:about\s+|approximately\s+|around\s+|roughly\s+|~\s*)?([0-9]+(?:\.[0-9]+)?)\s*hours?\s*(?:per\s+day|each\s+day|daily)/i);

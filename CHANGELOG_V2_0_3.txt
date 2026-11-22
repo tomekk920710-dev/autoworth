@@ -1,0 +1,10 @@
+AutoWorth V2.0.3 — Economics calculation fix
+
+- Parse localized decimal commas in economics inputs (e.g. 0,05).
+- Calculate economics from valid displayed input values even when values were populated
+  programmatically or restored without firing a browser input event.
+- Keep economics blank only when required workload/cost inputs are genuinely invalid.
+- Clarify that assumptions and estimates should be verified before relying on forecasts.
+
+Stripe configuration remains unchanged. This patch does not change the database configuration.
+- Let an explicit monthly/daily volume in the current workflow override stale form values (e.g. 500 invoices/month replaces a prior 2,400).
