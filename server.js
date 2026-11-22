@@ -208,6 +208,15 @@ app.post("/api/reports",auth,(req,res)=>{
  }
 });
 
+app.put("/api/reports/:id",auth,(req,res)=>{
+ const id=Number(req.params.id);
+ const workflow=String(req.body.workflow||"").slice(0,12000),analysis=req.body.analysis,economics=req.body.economics;
+ if(!Number.isInteger(id)||id<=0)return res.status(400).json({error:"Invalid report ID."});
+ if(!workflow||!analysis||!economics||economics.available===false)return res.status(400).json({error:"Valid workflow and economics data are required."});
+ const result=db.prepare("UPDATE reports SET workflow=?,analysis_json=?,economics_json=? WHERE id=? AND user_id=?").run(workflow,JSON.stringify(analysis),JSON.stringify(economics),id,req.user.id);
+ if(result.changes!==1)return res.status(404).json({error:"Saved report not found."});
+ res.json({id,updated:true});
+});
 app.get("/api/reports",auth,(req,res)=>res.json({reports:q.reports.all(req.user.id)}));
 app.get("/api/reports/:id",auth,(req,res)=>{const r=q.report.get(Number(req.params.id),req.user.id);if(!r)return res.status(404).json({error:"Report not found"});res.json({...r,analysis:JSON.parse(r.analysis_json),economics:JSON.parse(r.economics_json)})});
 

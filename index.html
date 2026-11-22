@@ -31,7 +31,7 @@ function awPurchase(value){if(typeof window.gtag==="function" && window.AW_TRACK
 <section id="app" class="hidden"><div id="openedReportBanner" class="report-open-banner hidden"></div>
 <section class="two"><div class="card"><div class="muted">AI INTERPRETATION</div><h2 id="summary"></h2><div id="flow" class="flow"></div><div class="callout"><b>Assumptions</b><ul id="assumptions"></ul></div></div><div class="card"><div class="muted">CONFIDENCE</div><div id="conf" class="score"></div><p id="cn"></p></div></section>
 <section class="card"><div class="muted">ECONOMICS</div><div class="grid">
-<div class="kpi"><small>Current monthly</small><strong id="cur"></strong></div><div class="kpi"><small>Automation + review</small><strong id="aut"></strong></div><div class="kpi"><small>Risk-adjusted saving</small><strong id="save"></strong></div><div class="kpi"><small>Payback</small><strong id="pay"></strong></div></div><div class="actions"><button onclick="saveReport()">Save Full Report</button><button class="alt" onclick="downloadLatestPdf()">Download PDF</button><button class="alt" onclick="print()">Print / PDF</button></div><div id="saveMsg" class="muted"></div></section>
+<div class="kpi"><small>Current monthly</small><strong id="cur"></strong></div><div class="kpi"><small>Automation + review</small><strong id="aut"></strong></div><div class="kpi"><small>Risk-adjusted saving</small><strong id="save"></strong></div><div class="kpi"><small>Payback</small><strong id="pay"></strong></div></div><div class="actions"><button id="saveReportBtn" onclick="saveReport()">Save Full Report</button><button class="alt" onclick="downloadLatestPdf()">Download PDF</button><button class="alt" onclick="print()">Print / PDF</button></div><div id="saveMsg" class="muted"></div></section>
 <section class="card"><div class="muted">DECISION</div><div class="scoreline"><div id="score" class="score"></div><div><span id="mode" class="pill"></span><p id="reason"></p></div></div><div class="bar"><i id="bar"></i></div></section>
 <section class="card"><div class="muted">ERROR-RATE STRESS TEST</div><table><thead><tr><th>AI error</th><th>Auto + review cost</th><th>Risk-adjusted saving</th><th>Status</th></tr></thead><tbody id="stress"></tbody></table></section>
 <section class="card"><div class="muted">STEP-BY-STEP</div><table><thead><tr><th>Step</th><th>Automation</th><th>Risk</th><th>Decision</th></tr></thead><tbody id="steps"></tbody></table></section>
@@ -141,16 +141,31 @@ async function run(){
   try{
     let r=await fetch('/api/analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({workflow:w})}),d=await r.json();
     if(!r.ok)throw Error(d.error||'Hiba');
-    analysis=d.analysis;awEvent('workflow_analysis_completed');renderAnalysisView();calculate();
+    analysis=d.analysis;window.latestReportId=null;$('openedReportBanner').classList.add('hidden');awEvent('workflow_analysis_completed');renderAnalysisView();calculate();
     $('status').textContent=d.source==='openai'?'Valódi AI elemzés kész.':'Fallback mód.';
   }catch(e){$('err').textContent=e.message;$('status').textContent=''}
   finally{$('go').disabled=false}
 }
 async function saveReport(resumed=false){
-if(!user){window.pendingSaveAfterAuth=true;try{sessionStorage.setItem('aw_pending_save',JSON.stringify({workflow:$('w').value,analysis,economics:econ}))}catch(e){}openAuth('register');$('saveMsg').textContent='Create your free account to save this analysis. Your current analysis will be kept.';return}
-let st=await fetch('/api/billing/status'); let bs=await st.json();
-if(bs.plan!=="pro" && bs.reportCredits<=0){$('paywall').classList.remove('hidden');return}
-let title=prompt('Report neve:','My automation analysis')||'Untitled workflow';let r=await fetch('/api/reports',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,workflow:$('w').value,analysis,economics:econ})});let d=await r.json();if(r.ok)window.latestReportId=d.id;$('saveMsg').textContent=r.ok?'Mentve a fiókodba.':d.error||'Hiba';loadReports()}
+  const btn=$('saveReportBtn');
+  if(!analysis){$('saveMsg').textContent='Run an analysis before saving.';return}
+  if(!econ || econ.available===false){$('saveMsg').textContent='Add valid workload assumptions before saving the economics.';return}
+  if(!user){window.pendingSaveAfterAuth=true;try{sessionStorage.setItem('aw_pending_save',JSON.stringify({workflow:$('w').value,analysis,economics:econ}))}catch(e){}openAuth('register');$('saveMsg').textContent='Create a free account to save this analysis. Your current analysis will be kept.';return}
+  const isUpdate=!!window.latestReportId;
+  btn.disabled=true;btn.textContent=isUpdate?'Saving changes…':'Saving…';$('saveMsg').textContent='Saving your report and economics…';
+  try{
+    let title='My automation analysis';
+    if(!isUpdate){const entered=prompt('Report name:','My automation analysis');if(entered===null){$('saveMsg').textContent='Save cancelled.';return}title=entered.trim()||'Untitled workflow'}
+    const url=isUpdate?('/api/reports/'+window.latestReportId):'/api/reports';
+    const r=await fetch(url,{method:isUpdate?'PUT':'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({title,workflow:$('w').value,analysis,economics:econ})});
+    const d=await r.json();
+    if(!r.ok){if(r.status===402){$('paywall').classList.remove('hidden');$('paywall').scrollIntoView({behavior:'smooth',block:'center'})}throw Error(d.error||'Could not save report.')}
+    window.latestReportId=d.id||window.latestReportId;
+    $('saveMsg').textContent=isUpdate?'Changes saved. Your existing report has been updated.':'Report saved to your account.';
+    await loadReports();
+  }catch(e){$('saveMsg').textContent=e.message||'Save failed. Please try again.'}
+  finally{btn.disabled=false;btn.textContent='Save Full Report'}
+}
 async function loadReports(){if(!user)return;$('history').classList.remove('hidden');let r=await fetch('/api/reports'),d=await r.json();$('reports').innerHTML=d.reports.length?d.reports.map(x=>`<div class="callout"><b>${esc(x.title)}</b><br><span class="muted">${esc(new Date(x.created_at).toLocaleString())}</span> <button class="alt" onclick="openSaved(${Number(x.id)})">Open</button> <button class="alt" onclick="deleteSaved(${Number(x.id)})">Delete</button></div>`).join(''):'<p>No saved reports yet.</p>'}
 async function openSaved(id){const r=await fetch('/api/reports/'+id),d=await r.json();if(!r.ok){alert(d.error||'Could not open this report.');return}window.latestReportId=id;resetEconomics();analysis=d.analysis;$('w').value=d.workflow;renderAnalysisView();applyEconomicsSnapshot(d.economics);calculate();$('app').classList.remove('hidden');$('openedReportBanner').classList.remove('hidden');$('openedReportBanner').textContent='Viewing saved report: '+d.title+' · '+new Date(d.created_at).toLocaleString();$('saveMsg').textContent='This saved report is loaded. Your original workflow and assumptions are restored.';$('app').scrollIntoView({behavior:'smooth',block:'start'})}
 async function deleteSaved(id){await fetch('/api/reports/'+id,{method:'DELETE'});loadReports()}
