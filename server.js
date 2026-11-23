@@ -373,7 +373,7 @@ app.get("/api/reports/:id/pdf",auth,(req,res)=>{
     doc.y=chartY+70;
     if(saving!==null){
       const preRisk=current-automation,adjustment=preRisk-saving;
-      doc.font("Helvetica").fontSize(8).fillColor(muted).text(`Gross monthly saving before risk adjustment: ${money(preRisk)}. Implied risk/quality adjustment: ${money(adjustment)} (the difference between gross and risk-adjusted savings; not a separately itemized cost estimate). Final risk-adjusted saving: ${money(saving)}.`,left,doc.y,{width:contentW});
+      doc.font("Helvetica").fontSize(8).fillColor(muted).text(`Gross monthly saving before risk adjustment: ${money(preRisk)}. Implied risk/quality adjustment: ${money(adjustment)}. Final risk-adjusted saving: ${money(saving)}. Risk adjustment assumes 6 minutes of human correction per AI error, valued at the stated labor rate.`,left,doc.y,{width:contentW});
     }
   }
   if(numeric(e.errorRate))labelValue("Assumed AI error rate",pct(e.errorRate));
@@ -381,6 +381,9 @@ app.get("/api/reports/:id/pdf",auth,(req,res)=>{
   if(numeric(e.setup))labelValue("One-time implementation cost",money(e.setup));
   if(numeric(e.tasks))labelValue("Monthly task volume",Number(e.tasks).toLocaleString("en-US"));
   if(numeric(e.mins))labelValue("Current handling time per task",`${Number(e.mins).toFixed(1)} minutes`);
+  if(numeric(e.labor))labelValue("Labor cost",`${money(e.labor)} / hour`);
+  if(numeric(e.ai))labelValue("AI / software variable cost",`${money(e.ai)} / task`);
+  if(numeric(e.review))labelValue("Human review time",`${Number(e.review).toFixed(1)} minutes / reviewed task`);
 
   if(Array.isArray(e.notes)&&e.notes.length){heading("Economics notes");e.notes.forEach(bullet)}
   if(Array.isArray(a.assumptions)&&a.assumptions.length){heading("Analysis assumptions");a.assumptions.forEach(bullet)}

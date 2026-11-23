@@ -1,0 +1,6 @@
+AutoWorth V2.3.5
+
+PDF report clarity improvements:
+- Explicitly explains the risk-adjustment assumption: six minutes of human correction per AI error, valued at the stated labor rate.
+- Prints the labor rate, AI/software variable cost per task, and human review minutes per reviewed task alongside the other economics inputs.
+- No changes to the underlying economics calculations, decision scoring, authentication, or Stripe configuration.
