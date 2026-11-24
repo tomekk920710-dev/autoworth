@@ -1,0 +1,6 @@
+AutoWorth V2.3.6 — Per-task cost display fix
+
+- Fixed PDF formatting for AI/software variable cost per task.
+- Unit costs now retain decimal precision (for example, $0.05/task and $0.08/task) instead of rounding to $0/task.
+- No changes to economics calculations, saved report data, decision scoring, Stripe, authentication, or database behavior.
+- Verified server.js syntax with node --check.

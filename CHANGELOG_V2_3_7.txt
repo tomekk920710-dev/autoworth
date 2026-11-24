@@ -1,0 +1,3 @@
+AutoWorth V2.3.7
+- Slightly increased PDF typography for improved readability while retaining the compact four-page report layout.
+- Preserved existing pagination, footer, and report content logic.

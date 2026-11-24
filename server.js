@@ -296,10 +296,26 @@ app.get("/api/reports/:id/pdf",auth,(req,res)=>{
   if(!r)return res.status(404).json({error:"Report not found"});
   let a={},e={};
   try{a=JSON.parse(r.analysis_json)||{};e=JSON.parse(r.economics_json)||{};}catch{return res.status(500).json({error:"This report could not be read."});}
+  // Rebuild the displayed economics from the exact saved inputs. This prevents
+  // stale summary totals from disagreeing with the per-task AI/software cost.
+  const num=v=>v!==null&&v!==undefined&&v!==""&&Number.isFinite(Number(v));
+  if([e.tasks,e.mins,e.labor,e.ai,e.review,e.reviewRate,e.errorRate].every(num)){
+    const tasks=Math.max(0,Number(e.tasks)),mins=Math.max(0,Number(e.mins)),labor=Math.max(0,Number(e.labor));
+    const ai=Math.max(0,Number(e.ai)),review=Math.max(0,Number(e.review));
+    const reviewRaw=Math.max(0,Number(e.reviewRate));
+    const reviewRate=Math.min(100,reviewRaw>1?reviewRaw:reviewRaw*100)/100;
+    const errorRate=Math.min(100,Math.max(0,Number(e.errorRate)>1?Number(e.errorRate)/100:Number(e.errorRate)));
+    const current=tasks*mins/60*labor;
+    const automation=tasks*ai+tasks*reviewRate*review/60*labor;
+    const correction=tasks*errorRate*labor*.1;
+    const saving=Math.max(0,current-automation-correction);
+    e={...e,current,automation,saving,payback:saving>0&&num(e.setup)&&Number(e.setup)>0?Number(e.setup)/saving:null,errorRate,reviewRate:reviewRate*100};
+  }
   const steps=Array.isArray(a.steps)?a.steps:[], architecture=Array.isArray(a.recommended_architecture)?a.recommended_architecture:[], plan=Array.isArray(a.build_plan)?a.build_plan:[];
   const safe=(v,fallback="Not provided")=>typeof v==="string"&&v.trim()?v.trim():fallback;
   const numeric=v=>v!==null&&v!==undefined&&v!==""&&Number.isFinite(Number(v));
   const money=v=>numeric(v)?`$${Number(v).toLocaleString("en-US",{minimumFractionDigits:0,maximumFractionDigits:0})}`:"—";
+  const unitCost=v=>numeric(v)?`$${Number(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:4})}`:"—";
   // Accept both normalized fractions (0.75) and already-percent values (75).
   const pct=v=>numeric(v)?`${(Number(v)>1?Number(v):Number(v)*100).toFixed(1)}%`:"—";
   const cleanTitle=String(r.title||"AutoWorth Report").normalize("NFC").replace(/[\\/:*?\"<>|\x00-\x1F]/g," ").replace(/\s+/g," ").trim().replace(/[. ]+$/g,"").slice(0,90)||"AutoWorth Report";
@@ -321,10 +337,10 @@ app.get("/api/reports/:id/pdf",auth,(req,res)=>{
     const required=Math.max(24,Number(height)||36);
     if(doc.y+required>bottom && doc.y>100) doc.addPage();
   };
-  const paragraph=(value,opts={})=>{const textValue=safe(value);doc.font(opts.bold?"Helvetica-Bold":"Helvetica").fontSize(opts.size||9.6).fillColor(opts.color||ink).text(textValue,{width:contentW,lineGap:opts.lineGap??3,paragraphGap:opts.paragraphGap??4});};
-  const heading=(label)=>{ensure(72);doc.moveDown(.35);doc.font("Helvetica-Bold").fontSize(13).fillColor(ink).text(label,{width:contentW});doc.moveDown(.22);const y=doc.y;doc.moveTo(left,y).lineTo(right,y).strokeColor(line).lineWidth(.8).stroke();doc.moveDown(.55);};
-  const bullet=(value)=>{ensure(28);const y=doc.y;const formatted=safe(value).replace(/\$(\d{4,})(?![\d,])/g,(_,digits)=>`$${Number(digits).toLocaleString("en-US")}`);doc.circle(left+4,y+5,2).fill(blue);doc.font("Helvetica").fontSize(9.3).fillColor(ink).text(formatted,left+14,y-1,{width:contentW-14,lineGap:2,paragraphGap:3});};
-  const labelValue=(label,value)=>{ensure(20);doc.font("Helvetica-Bold").fontSize(8.2).fillColor(muted).text(String(label).toUpperCase(),left,doc.y,{width:260,continued:true});doc.font("Helvetica-Bold").fontSize(9.2).fillColor(ink).text(`  ${safe(String(value))}`,{width:contentW-260});};
+  const paragraph=(value,opts={})=>{const textValue=safe(value);doc.font(opts.bold?"Helvetica-Bold":"Helvetica").fontSize(opts.size||10).fillColor(opts.color||ink).text(textValue,{width:contentW,lineGap:opts.lineGap??3,paragraphGap:opts.paragraphGap??4});};
+  const heading=(label)=>{ensure(72);doc.moveDown(.35);doc.font("Helvetica-Bold").fontSize(13.5).fillColor(ink).text(label,{width:contentW});doc.moveDown(.22);const y=doc.y;doc.moveTo(left,y).lineTo(right,y).strokeColor(line).lineWidth(.8).stroke();doc.moveDown(.55);};
+  const bullet=(value)=>{ensure(28);const y=doc.y;const formatted=safe(value).replace(/\$(\d{4,})(?![\d,])/g,(_,digits)=>`$${Number(digits).toLocaleString("en-US")}`);doc.circle(left+4,y+5,2).fill(blue);doc.font("Helvetica").fontSize(9.6).fillColor(ink).text(formatted,left+14,y-1,{width:contentW-14,lineGap:2,paragraphGap:3});};
+  const labelValue=(label,value)=>{ensure(20);doc.font("Helvetica-Bold").fontSize(8.5).fillColor(muted).text(String(label).toUpperCase(),left,doc.y,{width:260,continued:true});doc.font("Helvetica-Bold").fontSize(9.5).fillColor(ink).text(`  ${safe(String(value))}`,{width:contentW-260});};
   const card=(x,y,w,h,label,value,accent=blue)=>{doc.roundedRect(x,y,w,h,9).fill(pale);doc.roundedRect(x,y,4,h,2).fill(accent);doc.font("Helvetica-Bold").fontSize(7.5).fillColor(muted).text(label.toUpperCase(),x+13,y+11,{width:w-24});doc.font("Helvetica-Bold").fontSize(16).fillColor(ink).text(String(value),x+13,y+27,{width:w-24});};
 
   // Branded report cover and executive decision
@@ -346,7 +362,7 @@ app.get("/api/reports/:id/pdf",auth,(req,res)=>{
   doc.y=decisionY+108;
 
   heading("Workflow summary");
-  paragraph(a.workflow_summary,{size:9.7});
+  paragraph(a.workflow_summary,{size:10});
 
   heading("Economics overview");
   const current=numeric(e.current)?Number(e.current):null,automation=numeric(e.automation)?Number(e.automation):null,saving=numeric(e.saving)?Number(e.saving):null;
@@ -382,34 +398,39 @@ app.get("/api/reports/:id/pdf",auth,(req,res)=>{
   if(numeric(e.tasks))labelValue("Monthly task volume",Number(e.tasks).toLocaleString("en-US"));
   if(numeric(e.mins))labelValue("Current handling time per task",`${Number(e.mins).toFixed(1)} minutes`);
   if(numeric(e.labor))labelValue("Labor cost",`${money(e.labor)} / hour`);
-  if(numeric(e.ai))labelValue("AI / software variable cost",`${money(e.ai)} / task`);
+  if(numeric(e.ai))labelValue("AI / software variable cost",`${unitCost(e.ai)} / task`);
   if(numeric(e.review))labelValue("Human review time",`${Number(e.review).toFixed(1)} minutes / reviewed task`);
 
   if(Array.isArray(e.notes)&&e.notes.length){heading("Economics notes");e.notes.forEach(bullet)}
-  if(Array.isArray(a.assumptions)&&a.assumptions.length){heading("Analysis assumptions");a.assumptions.forEach(bullet)}
+  if(Array.isArray(a.assumptions)&&a.assumptions.length){
+    heading("Analysis assumptions");
+    const assumptions=a.assumptions.filter(x=>!/(AI|software).{0,35}(variable )?cost|cost.{0,35}(AI|software)/i.test(String(x)));
+    assumptions.forEach(bullet);
+    if(numeric(e.ai))bullet(`AI/software variable cost used in the economics calculation: ${unitCost(e.ai)} per task.`);
+  }
   if(Array.isArray(a.flags)&&a.flags.length){heading("Important flags");a.flags.forEach(bullet)}
 
   heading("Workflow steps");
   steps.forEach((step,i)=>{
     ensure(76);
-    doc.font("Helvetica-Bold").fontSize(10).fillColor(ink).text(`${i+1}. ${safe(step.name,"Workflow step")}`,{width:contentW});
+    doc.font("Helvetica-Bold").fontSize(10.3).fillColor(ink).text(`${i+1}. ${safe(step.name,"Workflow step")}`,{width:contentW});
     doc.font("Helvetica-Bold").fontSize(8.2).fillColor(blue).text(`${safe(step.recommended_mode,"REVIEW").replace(/_/g," ")}  •  ${safe(step.risk,"Unknown")} risk`,{width:contentW});
-    if(step.description)paragraph(step.description,{size:8.8,color:muted});
+    if(step.description)paragraph(step.description,{size:9.1,color:muted});
     const potential=numeric(step.automation_potential)?`${Math.round(Number(step.automation_potential))}%`:"—";
-    paragraph(`Automation potential: ${potential}. ${safe(step.rationale)}`,{size:8.8});
+    paragraph(`Automation potential: ${potential}. ${safe(step.rationale)}`,{size:9.1});
     if(step.human_required===true)paragraph("Human oversight required for this step.",{size:8.5,bold:true,color:amber});
     doc.moveDown(.35);
   });
 
-  if(architecture.length){heading("Recommended architecture");architecture.forEach((item,i)=>{ensure(58);doc.font("Helvetica-Bold").fontSize(8).fillColor(blue).text(`STEP ${i+1}`);paragraph(item,{size:9.2});doc.moveDown(.2)});}
+  if(architecture.length){heading("Recommended architecture");architecture.forEach((item,i)=>{ensure(58);doc.font("Helvetica-Bold").fontSize(8).fillColor(blue).text(`STEP ${i+1}`);paragraph(item,{size:9.5});doc.moveDown(.2)});}
   if(plan.length){
     // Keep the implementation plan together as a section instead of leaving its heading and first item stranded at the end of the previous page.
     if(doc.y>455) doc.addPage();
     heading("Implementation build plan");plan.forEach((item,i)=>{
     ensure(60);
     doc.font("Helvetica-Bold").fontSize(9.5).fillColor(ink).text(`${i+1}. ${safe(item.action,"Implementation step")}`,{width:contentW});
-    if(item.purpose)paragraph(`Purpose: ${item.purpose}`,{size:8.8});
-    if(item.success_metric)paragraph(`Success measure: ${item.success_metric}`,{size:8.8,color:muted});
+    if(item.purpose)paragraph(`Purpose: ${item.purpose}`,{size:9.1});
+    if(item.success_metric)paragraph(`Success measure: ${item.success_metric}`,{size:9.1,color:muted});
     doc.moveDown(.25);
   });}
   ensure(65);
@@ -434,4 +455,4 @@ app.get("/api/reports/:id/pdf",auth,(req,res)=>{
 });
 app.delete("/api/reports/:id",auth,(req,res)=>{q.deleteReport.run(Number(req.params.id),req.user.id);res.json({ok:true})});
 app.get("/{*splat}",(req,res)=>res.sendFile(path.join(__dirname,"index.html")));
-app.listen(PORT,()=>console.log("AutoWorth V2.3.3 on http://localhost:"+PORT));
+app.listen(PORT,()=>console.log("AutoWorth V2.3.8 on http://localhost:"+PORT));

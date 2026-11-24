@@ -1,4 +1,4 @@
-# AutoWorth V2.3.0
+# AutoWorth V2.3.8
 
 Premium workflow automation analysis SaaS. The app provides AI workflow interpretation, deterministic economics, risk-aware decisions, saved reports, PDF export and Stripe Full Report checkout.
 
@@ -47,3 +47,7 @@ Each analysis now returns eight structured economics assumptions. Values are mar
 ## V2.3 PDF quality
 - Redesigned PDF report with stronger contrast, KPI cards, a monthly cost comparison chart, clearer financial adjustments and consistent pagination.
 - PDF filenames now follow the Saved Report title when downloaded.
+
+
+### V2.3.8 PDF economics consistency
+PDF economics totals are recalculated from the saved deterministic inputs at export time. The AI/software unit-cost assumption is sourced from the same saved value, avoiding contradictory AI-generated assumption text.

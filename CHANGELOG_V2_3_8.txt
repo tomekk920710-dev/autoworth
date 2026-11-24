@@ -1,0 +1,7 @@
+AutoWorth V2.3.8 — PDF economics consistency fix
+
+- PDF summary economics are recalculated from the exact saved task, labor, AI cost, review, and error-rate inputs.
+- The AI/software variable-cost assumption is now printed from the same saved value used by the deterministic economics engine.
+- Removes conflicting AI/software-cost wording from the AI-generated assumptions list.
+- Keeps the existing four-page layout, typography, headers, footers, and blank-page prevention logic.
+- No changes to account data, saved report contents, decision scoring, Stripe, authentication, or pricing.
