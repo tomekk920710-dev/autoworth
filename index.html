@@ -183,7 +183,20 @@ async function downloadLatestPdf(){
  if(!user){openAuth('login');return}
  // The saved report ID is tracked after save/open.
  if(!window.latestReportId){$('saveMsg').textContent='Save the Full Report first, then download its PDF.';return}
- window.location.href='/api/reports/'+window.latestReportId+'/pdf';
+ const button=document.querySelector('[onclick="downloadLatestPdf()"]');
+ if(button){button.disabled=true;button.textContent='Preparing PDF…'}
+ try{
+  const response=await fetch('/api/reports/'+window.latestReportId+'/pdf');
+  const type=response.headers.get('content-type')||'';
+  if(!response.ok||!type.includes('application/pdf')){
+   let message='Could not generate this PDF. Please review the saved economics assumptions.';
+   try{const data=await response.json();if(data.error)message=data.error}catch{}
+   alert(message);return;
+  }
+  const blob=await response.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');
+  a.href=url;a.download='AutoWorth-Full-Report.pdf';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+ }catch(error){alert('PDF export failed. Please try again.')}
+ finally{if(button){button.disabled=false;button.textContent='Download PDF'}}
 }
 async function handlePaymentReturn(){
  const p=new URLSearchParams(location.search),status=p.get('payment'),sid=p.get('session_id');

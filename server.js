@@ -6,6 +6,7 @@ import jwt from "jsonwebtoken";
 import cookieParser from "cookie-parser";
 import Stripe from "stripe";
 import PDFDocument from "pdfkit";
+import {recalculateSavedEconomics} from "./economics.js";
 import path from "path";
 import {existsSync,mkdirSync} from "fs";
 import {fileURLToPath} from "url";
@@ -296,28 +297,20 @@ app.get("/api/reports/:id/pdf",auth,(req,res)=>{
   if(!r)return res.status(404).json({error:"Report not found"});
   let a={},e={};
   try{a=JSON.parse(r.analysis_json)||{};e=JSON.parse(r.economics_json)||{};}catch{return res.status(500).json({error:"This report could not be read."});}
-  // Rebuild the displayed economics from the exact saved inputs. This prevents
-  // stale summary totals from disagreeing with the per-task AI/software cost.
+  // Recalculate from saved deterministic inputs. Never fall back to stale
+  // summary totals when required inputs are missing or invalid.
+  const recalculated=recalculateSavedEconomics(e);
+  if(!recalculated.ok)return res.status(409).json({error:recalculated.error});
+  e=recalculated.economics;
   const num=v=>v!==null&&v!==undefined&&v!==""&&Number.isFinite(Number(v));
-  if([e.tasks,e.mins,e.labor,e.ai,e.review,e.reviewRate,e.errorRate].every(num)){
-    const tasks=Math.max(0,Number(e.tasks)),mins=Math.max(0,Number(e.mins)),labor=Math.max(0,Number(e.labor));
-    const ai=Math.max(0,Number(e.ai)),review=Math.max(0,Number(e.review));
-    const reviewRaw=Math.max(0,Number(e.reviewRate));
-    const reviewRate=Math.min(100,reviewRaw>1?reviewRaw:reviewRaw*100)/100;
-    const errorRate=Math.min(100,Math.max(0,Number(e.errorRate)>1?Number(e.errorRate)/100:Number(e.errorRate)));
-    const current=tasks*mins/60*labor;
-    const automation=tasks*ai+tasks*reviewRate*review/60*labor;
-    const correction=tasks*errorRate*labor*.1;
-    const saving=Math.max(0,current-automation-correction);
-    e={...e,current,automation,saving,payback:saving>0&&num(e.setup)&&Number(e.setup)>0?Number(e.setup)/saving:null,errorRate,reviewRate:reviewRate*100};
-  }
   const steps=Array.isArray(a.steps)?a.steps:[], architecture=Array.isArray(a.recommended_architecture)?a.recommended_architecture:[], plan=Array.isArray(a.build_plan)?a.build_plan:[];
   const safe=(v,fallback="Not provided")=>typeof v==="string"&&v.trim()?v.trim():fallback;
   const numeric=v=>v!==null&&v!==undefined&&v!==""&&Number.isFinite(Number(v));
   const money=v=>numeric(v)?`$${Number(v).toLocaleString("en-US",{minimumFractionDigits:0,maximumFractionDigits:0})}`:"—";
   const unitCost=v=>numeric(v)?`$${Number(v).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:4})}`:"—";
-  // Accept both normalized fractions (0.75) and already-percent values (75).
+  // AI error rate is stored as a fraction; review coverage is stored as 0..100%.
   const pct=v=>numeric(v)?`${(Number(v)>1?Number(v):Number(v)*100).toFixed(1)}%`:"—";
+  const percentValue=v=>numeric(v)?`${Number(v).toFixed(1)}%`:"—";
   const cleanTitle=String(r.title||"AutoWorth Report").normalize("NFC").replace(/[\\/:*?\"<>|\x00-\x1F]/g," ").replace(/\s+/g," ").trim().replace(/[. ]+$/g,"").slice(0,90)||"AutoWorth Report";
   const fallbackName=cleanTitle.normalize("NFKD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-zA-Z0-9 _-]/g,"").trim().replace(/[ _]+/g,"-").replace(/-+/g,"-").slice(0,80)||`AutoWorth-Report-${r.id}`;
   const filename=`${fallbackName}.pdf`;
@@ -393,7 +386,7 @@ app.get("/api/reports/:id/pdf",auth,(req,res)=>{
     }
   }
   if(numeric(e.errorRate))labelValue("Assumed AI error rate",pct(e.errorRate));
-  if(numeric(e.reviewRate))labelValue("Human review coverage",pct(e.reviewRate));
+  if(numeric(e.reviewRate))labelValue("Human review coverage",percentValue(e.reviewRate));
   if(numeric(e.setup))labelValue("One-time implementation cost",money(e.setup));
   if(numeric(e.tasks))labelValue("Monthly task volume",Number(e.tasks).toLocaleString("en-US"));
   if(numeric(e.mins))labelValue("Current handling time per task",`${Number(e.mins).toFixed(1)} minutes`);
@@ -404,7 +397,7 @@ app.get("/api/reports/:id/pdf",auth,(req,res)=>{
   if(Array.isArray(e.notes)&&e.notes.length){heading("Economics notes");e.notes.forEach(bullet)}
   if(Array.isArray(a.assumptions)&&a.assumptions.length){
     heading("Analysis assumptions");
-    const assumptions=a.assumptions.filter(x=>!/(AI|software).{0,35}(variable )?cost|cost.{0,35}(AI|software)/i.test(String(x)));
+    const assumptions=a.assumptions.filter(x=>!/(?:\bAI\b|\bsoftware\b).{0,80}\b(?:variable )?(?:cost|expense|spend|price)\b|\b(?:variable )?(?:cost|expense|spend|price)\b.{0,80}(?:\bAI\b|\bsoftware\b)/i.test(String(x)));
     assumptions.forEach(bullet);
     if(numeric(e.ai))bullet(`AI/software variable cost used in the economics calculation: ${unitCost(e.ai)} per task.`);
   }
@@ -455,4 +448,4 @@ app.get("/api/reports/:id/pdf",auth,(req,res)=>{
 });
 app.delete("/api/reports/:id",auth,(req,res)=>{q.deleteReport.run(Number(req.params.id),req.user.id);res.json({ok:true})});
 app.get("/{*splat}",(req,res)=>res.sendFile(path.join(__dirname,"index.html")));
-app.listen(PORT,()=>console.log("AutoWorth V2.3.8 on http://localhost:"+PORT));
+app.listen(PORT,()=>console.log("AutoWorth V2.3.9 on http://localhost:"+PORT));

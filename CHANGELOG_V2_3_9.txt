@@ -1,0 +1,9 @@
+AutoWorth V2.3.9 — PDF economics edge-case and validation fix
+
+- Fixes review coverage normalization: saved reviewRate is always a percentage (0–100); 1 now correctly means 1%, not 100%.
+- Moves saved-input PDF economics recalculation into a shared deterministic module with automated regression tests.
+- Prevents stale totals from being exported when required saved economics inputs are missing or invalid; returns a clear error without changing saved report data.
+- Keeps errorRate compatibility with normalized fractions and legacy percentage values above 1.
+- Displays review coverage using percentage semantics and broadens filtering of conflicting AI/software cost assumptions.
+- Improves the PDF download UI to show a readable message if an export is blocked by invalid legacy inputs.
+- No changes to Stripe, authentication, pricing, saved report records, scoring, or PDF visual design.
