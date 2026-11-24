@@ -193,8 +193,25 @@ async function downloadLatestPdf(){
    try{const data=await response.json();if(data.error)message=data.error}catch{}
    alert(message);return;
   }
+  // Use the saved report title supplied by the server's Content-Disposition header.
+  // Prefer RFC 5987 filename* (UTF-8), then fall back to filename.
+  const disposition=response.headers.get('content-disposition')||'';
+  const extended=disposition.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+  const basic=disposition.match(/filename\s*=\s*"?([^";]+)"?/i);
+  let downloadName='';
+  if(extended){
+   try{downloadName=decodeURIComponent(extended[1].trim().replace(/^"|"$/g,''))}catch{}
+  }
+  if(!downloadName&&basic)downloadName=basic[1].trim();
+  // Prevent header values from becoming paths or unsafe filenames.
+  downloadName=String(downloadName||'AutoWorth-Report.pdf')
+   .replace(/[\\/:*?"<>|\x00-\x1F]/g,' ')
+   .replace(/\s+/g,' ').trim().replace(/[. ]+$/g,'');
+  if(!downloadName)downloadName='AutoWorth-Report';
+  if(!/\.pdf$/i.test(downloadName))downloadName+='.pdf';
   const blob=await response.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');
-  a.href=url;a.download='AutoWorth-Full-Report.pdf';document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+  a.href=url;a.download=downloadName;document.body.appendChild(a);a.click();a.remove();
+  window.setTimeout(()=>URL.revokeObjectURL(url),1000);
  }catch(error){alert('PDF export failed. Please try again.')}
  finally{if(button){button.disabled=false;button.textContent='Download PDF'}}
 }

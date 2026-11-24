@@ -1,3 +1,9 @@
+## V2.3.10
+
+- Fixed PDF downloads to use the saved report title from the server's `Content-Disposition` header.
+- Prefers UTF-8 `filename*`, falls back to `filename`, sanitizes the filename, and preserves the `.pdf` extension.
+- No changes to Stripe, authentication, report storage, or PDF calculation logic.
+
 # AutoWorth V2.3.9
 
 Premium workflow automation analysis SaaS. The app provides AI workflow interpretation, deterministic economics, risk-aware decisions, saved reports, PDF export and Stripe Full Report checkout.
