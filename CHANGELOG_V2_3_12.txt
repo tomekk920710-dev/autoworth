@@ -1,0 +1,35 @@
+AutoWorth V2.3.12 — Stability and security hardening
+
+1. Persistent rate limiting
+- Replaced process-memory counters with SQLite-backed atomic UPSERT counters.
+- Limits survive process restarts and are shared by all app workers using the same SQLite database.
+- Old limiter rows are periodically pruned.
+- If the limiter database operation fails, protected requests fail closed with HTTP 503.
+
+2. HTTP security headers
+- Added nosniff, frame denial, strict referrer policy, restrictive permissions policy,
+  same-origin resource policy, and a Content Security Policy compatible with the current
+  inline frontend.
+- HSTS is sent in production only.
+
+3. Real database health check
+- /api/health now runs SQLite PRAGMA quick_check and a SELECT 1 probe.
+- Returns HTTP 503 and db:false when the database check fails; it no longer reports
+  db:true unconditionally.
+
+4. Proxy IP handling
+- In production, Express trusts one proxy hop, matching the Render reverse-proxy setup,
+  so rate limiting uses the client IP supplied by the trusted immediate proxy rather
+  than collapsing all visitors onto the proxy address.
+
+Validation
+- Existing automated economics tests: 6 passed, 0 failed.
+- Node syntax check: passed.
+- SQLite rate-limit UPSERT behavior: verified (increments within window and resets after expiry).
+- SQLite quick_check: returned ok.
+- A complete npm package-lock.json could not be generated in this environment because
+  the npm registry package metadata was not cached and registry access timed out.
+  No fabricated or incomplete lockfile was added. Generate the lockfile in a network-enabled
+  environment before switching Render to npm ci.
+- Production Render, Stripe Sandbox, email delivery, and real backup/restore have not
+  been exercised by these local checks.

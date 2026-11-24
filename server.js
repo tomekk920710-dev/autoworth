@@ -14,6 +14,8 @@ import {randomBytes,createHash} from "crypto";
 
 const __dirname=path.dirname(fileURLToPath(import.meta.url));
 const app=express(), PORT=process.env.PORT||3000;
+// Render terminates TLS at its proxy. Trust only the directly connected proxy hop.
+if(process.env.NODE_ENV === "production") app.set("trust proxy", 1);
 const JWT_SECRET=process.env.JWT_SECRET || (process.env.NODE_ENV === "production" ? "" : "dev-only-change-me");
 if(process.env.NODE_ENV === "production" && !process.env.JWT_SECRET){ console.error("FATAL: JWT_SECRET is required in production."); process.exit(1); }
 const MODEL=process.env.OPENAI_MODEL||"gpt-5.4";
@@ -37,9 +39,35 @@ app.post("/api/stripe/webhook", express.raw({type:"application/json"}), async (r
 app.use(express.json({limit:"100kb"}));
 app.use(cookieParser());
 
-const rateBuckets=new Map();
-function rateLimit({windowMs,max,keyPrefix}){return (req,res,next)=>{const key=keyPrefix+":"+(req.ip||req.socket.remoteAddress||"unknown"),now=Date.now(),b=rateBuckets.get(key);if(!b||now-b.start>=windowMs){rateBuckets.set(key,{start:now,count:1});return next()}b.count++;if(b.count>max)return res.status(429).json({error:"Too many requests. Please try again later."});next()}}
-setInterval(()=>{const cutoff=Date.now()-3600000;for(const [k,v] of rateBuckets)if(v.start<cutoff)rateBuckets.delete(k)},600000).unref();
+// Security headers. The app currently uses inline scripts/styles, so CSP keeps
+// those working while blocking framing, plugins, remote scripts and base-URI injection.
+app.use((req,res,next)=>{
+  res.setHeader("X-Content-Type-Options","nosniff");
+  res.setHeader("X-Frame-Options","DENY");
+  res.setHeader("Referrer-Policy","strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy","camera=(), microphone=(), geolocation=()");
+  res.setHeader("Cross-Origin-Resource-Policy","same-origin");
+  res.setHeader("Content-Security-Policy","default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self' https://checkout.stripe.com");
+  if(process.env.NODE_ENV === "production") res.setHeader("Strict-Transport-Security","max-age=15552000");
+  next();
+});
+
+let rateLimitStatement;
+function rateLimit({windowMs,max,keyPrefix}) {
+  return (req,res,next)=>{
+    try {
+      const ip=String(req.ip||req.socket.remoteAddress||"unknown").slice(0,100);
+      const key=keyPrefix+":"+ip;
+      const now=Date.now();
+      const row=rateLimitStatement.get(key,now,windowMs,now,windowMs,now);
+      if(row.count>max) return res.status(429).json({error:"Too many requests. Please try again later."});
+      return next();
+    } catch(error) {
+      console.error("[RATE_LIMIT] Persistent limiter unavailable:",error.message);
+      return res.status(503).json({error:"Request protection is temporarily unavailable. Please try again shortly."});
+    }
+  };
+}
 
 app.get("/",(req,res)=>res.sendFile(path.join(__dirname,"index.html")));
 
@@ -62,12 +90,20 @@ db.exec(`CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY AUTOINCREMENT,e
 CREATE TABLE IF NOT EXISTS reports(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,title TEXT NOT NULL,workflow TEXT NOT NULL,analysis_json TEXT NOT NULL,economics_json TEXT NOT NULL,created_at TEXT DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(user_id) REFERENCES users(id));
 CREATE TABLE IF NOT EXISTS stripe_events(id TEXT PRIMARY KEY,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE TABLE IF NOT EXISTS checkout_sessions(id TEXT PRIMARY KEY,user_id INTEGER NOT NULL,status TEXT NOT NULL DEFAULT "created",created_at TEXT DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(user_id) REFERENCES users(id));
-CREATE TABLE IF NOT EXISTS auth_tokens(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,token_hash TEXT UNIQUE NOT NULL,kind TEXT NOT NULL,expires_at INTEGER NOT NULL,used_at INTEGER,created_at TEXT DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(user_id) REFERENCES users(id));`);
+CREATE TABLE IF NOT EXISTS auth_tokens(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER NOT NULL,token_hash TEXT UNIQUE NOT NULL,kind TEXT NOT NULL,expires_at INTEGER NOT NULL,used_at INTEGER,created_at TEXT DEFAULT CURRENT_TIMESTAMP,FOREIGN KEY(user_id) REFERENCES users(id));
+CREATE TABLE IF NOT EXISTS rate_limits(key TEXT PRIMARY KEY,window_start INTEGER NOT NULL,count INTEGER NOT NULL);`);
+rateLimitStatement=db.prepare("INSERT INTO rate_limits(key,window_start,count) VALUES(?,?,1) ON CONFLICT(key) DO UPDATE SET window_start=CASE WHEN rate_limits.window_start + ? <= ? THEN excluded.window_start ELSE rate_limits.window_start END, count=CASE WHEN rate_limits.window_start + ? <= ? THEN 1 ELSE rate_limits.count+1 END RETURNING count");
 const userColumns=db.pragma("table_info(users)");
 if(!userColumns.some(c=>c.name==="email_verified_at")){db.exec("ALTER TABLE users ADD COLUMN email_verified_at TEXT");db.exec("UPDATE users SET email_verified_at=CURRENT_TIMESTAMP WHERE email_verified_at IS NULL");}
 const reportColumns=db.pragma("table_info(reports)");
 if(!reportColumns.some(c=>c.name==="payment_session_id")) db.exec("ALTER TABLE reports ADD COLUMN payment_session_id TEXT");
 db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_payment_session ON reports(user_id,payment_session_id) WHERE payment_session_id IS NOT NULL");
+// Keep the persistent limiter table bounded; rows older than one day cannot affect a live window.
+setInterval(()=>{
+  try { db.prepare("DELETE FROM rate_limits WHERE window_start < ?").run(Date.now()-86400000); }
+  catch(error) { console.error("[RATE_LIMIT] Cleanup failed:",error.message); }
+},3600000).unref();
+
 const q={userByEmail:db.prepare("SELECT * FROM users WHERE email=?"),userById:db.prepare("SELECT id,email FROM users WHERE id=?"),
 insertUser:db.prepare("INSERT INTO users(email,password_hash,email_verified_at) VALUES(?,?,NULL)"),insertReport:db.prepare("INSERT INTO reports(user_id,title,workflow,analysis_json,economics_json) VALUES(?,?,?,?,?)"),
 insertPaidReport:db.prepare("INSERT INTO reports(user_id,title,workflow,analysis_json,economics_json,payment_session_id) VALUES(?,?,?,?,?,?)"),
@@ -124,7 +160,24 @@ function fallbackEconomics(t){
 }
 function fallback(t){let s=[];const rules=[[/email|request|form|message|ticket/,"Receive / read input","input",88,"Low","AUTOMATE"],[/copy|paste|extract|crm|spreadsheet|database|enter/,"Extract / store data","data",94,"Low","AUTOMATE"],[/categor|classif|triage|sort|route/,"Classify / route","decision",82,"Medium","AUTOMATE"],[/price|pricing|quote|calculate/,"Calculate / quote","calculation",76,"Medium","AUGMENT"],[/reply|respond|answer|draft|send/,"Draft / send response","language",78,"Medium","AUGMENT"],[/schedule|calendar|follow.?up|reminder/,"Schedule / follow up","workflow",90,"Low","AUTOMATE"],[/complaint|refund|payment|financial|legal|medical|safety/,"Sensitive decision","high_risk",25,"High","KEEP_HUMAN"],[/negotiat|sales call|close|escalat/,"Judgement / negotiation","judgement",35,"High","KEEP_HUMAN"]];for(const[r,n,type,p,risk,m]of rules)if(r.test(t.toLowerCase()))s.push({id:s.length+1,name:n,description:"Fallback detection.",type,automation_potential:p,risk,recommended_mode:m,human_required:m!=="AUTOMATE",estimated_time_share_pct:Math.round(100/Math.max(1,s.length+1)),rationale:"Fallback mode."});if(!s.length)s=[{id:1,name:"Process / output",description:"More detail needed.",type:"unknown",automation_potential:50,risk:"Unknown",recommended_mode:"AUGMENT",human_required:true,estimated_time_share_pct:100,rationale:"More detail needed."}];return{workflow_summary:"Fallback interpretation",confidence:55,assumptions:["Configure OPENAI_API_KEY for live AI"],flags:[],economics:fallbackEconomics(t),steps:s,recommended_architecture:["Trigger","AI / rules","Validation","Human exception queue","Output","Monitoring"],build_plan:[{step:1,action:"Run shadow pilot",purpose:"Measure actual performance",success_metric:"Target exception rate met"},{step:2,action:"Add validation",purpose:"Protect outputs",success_metric:"No critical errors"},{step:3,action:"Recalculate economics",purpose:"Validate case",success_metric:"Actual savings beat target"}],ai_tasks:[{task:"Extract fields",input:"Workflow data",output:"Structured fields",guardrail:"Reject low-confidence values"}]};}
 
-app.get("/api/health",(req,res)=>res.json({ok:true,ai_enabled:Boolean(process.env.OPENAI_API_KEY),email_enabled:Boolean(process.env.RESEND_API_KEY&&process.env.EMAIL_FROM),db:true,model:MODEL}));
+app.get("/api/health",(req,res)=>{
+  let dbHealthy=false;
+  try {
+    const integrity=db.pragma("quick_check");
+    const probe=db.prepare("SELECT 1 AS ok").get();
+    dbHealthy=Array.isArray(integrity)&&integrity.length===1&&integrity[0].quick_check==="ok"&&probe?.ok===1;
+  } catch(error) {
+    console.error("[HEALTH] Database check failed:",error.message);
+  }
+  const healthy=dbHealthy;
+  res.status(healthy?200:503).json({
+    ok:healthy,
+    ai_enabled:Boolean(process.env.OPENAI_API_KEY),
+    email_enabled:Boolean(process.env.RESEND_API_KEY&&process.env.EMAIL_FROM),
+    db:healthy,
+    model:MODEL
+  });
+});
 async function sendAuthEmail(to,subject,html){
   if(!process.env.RESEND_API_KEY || !process.env.EMAIL_FROM) {
     console.error("[AUTH_EMAIL] Not configured: RESEND_API_KEY or EMAIL_FROM is missing.");
@@ -448,4 +501,4 @@ app.get("/api/reports/:id/pdf",auth,(req,res)=>{
 });
 app.delete("/api/reports/:id",auth,(req,res)=>{q.deleteReport.run(Number(req.params.id),req.user.id);res.json({ok:true})});
 app.get("/{*splat}",(req,res)=>res.sendFile(path.join(__dirname,"index.html")));
-app.listen(PORT,()=>console.log("AutoWorth V2.3.9 on http://localhost:"+PORT));
+app.listen(PORT,()=>console.log("AutoWorth V2.3.12 on http://localhost:"+PORT));

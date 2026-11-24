@@ -1,0 +1,4 @@
+AutoWorth V2.3.11
+- Added accessible show/hide controls to both password fields in the authentication modal, including password reset confirmation.
+- Added explicit form autocomplete semantics for login, registration, password reset, and confirmation fields to improve browser and password-manager save/fill support.
+- Preserved the existing authentication API payloads and password-reset flow.

@@ -66,3 +66,13 @@ PDF economics totals are recalculated from the saved deterministic inputs at exp
 - Keeps AI error rate fraction handling compatible with legacy percentage values above 1.
 - Improves filtering of AI-generated AI/software cost assumptions and renders human-review coverage in percentage units.
 - Adds automated regression tests for 1%, 0%, 100%, missing inputs, legacy error-rate values, and the known invoice/support economics examples.
+
+
+## V2.3.11
+- Accessible password visibility toggles for login, registration, and password reset fields.
+- Improved browser/password-manager autocomplete metadata for account credentials.
+
+
+## Current release
+
+V2.3.12 adds persistent SQLite-backed rate limiting, HTTP security headers, and a real SQLite health check. See `CHANGELOG_V2_3_12.txt` for validation scope and deployment notes.
