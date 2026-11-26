@@ -1,0 +1,28 @@
+AutoWorth V2.3.13 — Authentication and database reliability hardening
+
+1. Password-reset session revocation
+- Added a per-user session_version counter with a backwards-compatible SQLite migration.
+- New JWTs include the current session version; authenticated requests compare it with the database.
+- A successful password reset increments the version, invalidating all previously issued JWTs for that user.
+- Existing accounts and existing version-0 sessions remain valid until a password reset occurs.
+
+2. SQLite foreign-key enforcement
+- Enabled PRAGMA foreign_keys=ON on the application database connection before schema setup and application queries.
+- Added a startup verification that enforcement is active.
+- Added a non-destructive startup warning if legacy rows already violate declared foreign keys; no existing data is automatically deleted.
+
+3. Password visibility control
+- Added an explicit crossed-out eye icon when a password is hidden and an open-eye icon when visible.
+- Applies to the password and confirmation fields in the shared authentication modal (login, registration, forgot/reset flows as applicable).
+- Preserves keyboard operation, accessible labels, pressed state, and browser password-manager autocomplete.
+
+4. Validation
+- Added automated unit tests for JWT session-version matching and revocation behavior.
+- Existing economics regression tests retained.
+- Run `npm test` and `node --check server.js` before deployment.
+- Keep Stripe Sandbox/Test credentials unchanged. No live payment configuration is introduced.
+
+Deployment notes
+- The schema migration adds `users.session_version INTEGER NOT NULL DEFAULT 0`; it preserves existing user rows.
+- Back up the persistent SQLite database before deployment, as with any production schema change.
+- No destructive database operation is included.

@@ -76,3 +76,10 @@ PDF economics totals are recalculated from the saved deterministic inputs at exp
 ## Current release
 
 V2.3.12 adds persistent SQLite-backed rate limiting, HTTP security headers, and a real SQLite health check. See `CHANGELOG_V2_3_12.txt` for validation scope and deployment notes.
+
+
+## V2.3.13 authentication and database reliability
+- Password reset increments a per-user session version, revoking previously issued JWT sessions.
+- SQLite foreign-key enforcement is enabled and verified at startup; pre-existing violations are reported without destructive cleanup.
+- Password visibility controls now switch between open-eye and crossed-out-eye icons with accessible state labels.
+- See `CHANGELOG_V2_3_13.txt` for migration and validation notes.
