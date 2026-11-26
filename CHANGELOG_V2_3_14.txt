@@ -1,0 +1,6 @@
+AutoWorth V2.3.14
+
+- Fixed password visibility controls with delegated click handling and explicit field targeting, including the password-reset screen.
+- Kept password and confirmation visibility independent; each toggle updates the icon and accessibility state.
+- Updated the server startup version label to match the package version.
+- No database schema, stored reports, Stripe settings, or Render disk configuration changes in this release.

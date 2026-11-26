@@ -10,9 +10,11 @@ test("password visibility toggle includes open-eye and crossed-out-eye states", 
   assert.match(html, /function syncPasswordToggle\(/);
   assert.match(html, /aria-pressed/);
   assert.match(html, /function togglePassword\(/);
+  assert.match(html, /document\.addEventListener\('click'/);
+  assert.match(html, /event\.target\.closest\('\[data-password-toggle\]'/);
 });
 
 test("both password and confirmation fields have independent visibility controls", () => {
-  assert.match(html, /togglePassword\('password',this\)/);
-  assert.match(html, /togglePassword\('passwordConfirm',this\)/);
+  assert.match(html, /data-password-toggle=\"password\"/);
+  assert.match(html, /data-password-toggle=\"passwordConfirm\"/);
 });

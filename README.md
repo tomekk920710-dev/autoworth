@@ -83,3 +83,8 @@ V2.3.12 adds persistent SQLite-backed rate limiting, HTTP security headers, and 
 - SQLite foreign-key enforcement is enabled and verified at startup; pre-existing violations are reported without destructive cleanup.
 - Password visibility controls now switch between open-eye and crossed-out-eye icons with accessible state labels.
 - See `CHANGELOG_V2_3_13.txt` for migration and validation notes.
+
+
+## V2.3.14
+
+Fixes password visibility toggles on the password-reset screen using delegated click handling and explicit field targeting. No database schema, Stripe configuration, or persistent-disk changes.
